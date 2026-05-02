@@ -1,0 +1,194 @@
+session:
+  participant_id: "anon_001"
+  session_id: "auto"
+  output_dir: "data/sessions"
+
+openbci:
+  enabled: true
+  board: "cyton_daisy"
+  expected_sample_rate_hz: 125
+  stream_name: "slopodoro_openbci_raw"
+  source_id: "openbci_cyton_daisy"
+  connection:
+    serial_port: "COM10"
+    brainflow_board_id: null
+    streamer_params: ""
+    startup_buffer_samples: 45000
+    poll_interval_seconds: 0.05
+  board_commands: []
+  channels:
+    - index: 1
+      label: "Fp1"
+      type: "eeg"
+      enabled: true
+      gain: "24x"
+      notes: "frontal-left EEG"
+      units: "uV"
+    - index: 2
+      label: "Fp2"
+      type: "eeg"
+      enabled: true
+      gain: "24x"
+      notes: "frontal-right EEG"
+      units: "uV"
+    - index: 3
+      label: "C3"
+      type: "eeg"
+      enabled: true
+      gain: "24x"
+      notes: "OpenBCI Mark IV default: Cyton N3P"
+      units: "uV"
+    - index: 4
+      label: "C4"
+      type: "eeg"
+      enabled: true
+      gain: "24x"
+      notes: "OpenBCI Mark IV default: Cyton N4P"
+      units: "uV"
+    - index: 5
+      label: "P7"
+      type: "eeg"
+      enabled: true
+      gain: "24x"
+      notes: "OpenBCI Mark IV default: Cyton N5P"
+      units: "uV"
+    - index: 6
+      label: "P8"
+      type: "eeg"
+      enabled: true
+      gain: "24x"
+      notes: "OpenBCI Mark IV default: Cyton N6P"
+      units: "uV"
+    - index: 7
+      label: "O1"
+      type: "eeg"
+      enabled: true
+      gain: "24x"
+      notes: "OpenBCI Mark IV default: Cyton N7P"
+      units: "uV"
+    - index: 8
+      label: "O2"
+      type: "eeg"
+      enabled: true
+      gain: "24x"
+      notes: "OpenBCI Mark IV default: Cyton N8P"
+      units: "uV"
+    - index: 9
+      label: "F7"
+      type: "eeg"
+      enabled: true
+      gain: "24x"
+      notes: "OpenBCI Mark IV Daisy default: Daisy N1P"
+      units: "uV"
+    - index: 10
+      label: "F8"
+      type: "eeg"
+      enabled: true
+      gain: "24x"
+      notes: "OpenBCI Mark IV Daisy default: Daisy N2P"
+      units: "uV"
+    - index: 11
+      label: "F3"
+      type: "eeg"
+      enabled: true
+      gain: "24x"
+      notes: "OpenBCI Mark IV Daisy default: Daisy N3P"
+      units: "uV"
+    - index: 12
+      label: "F4"
+      type: "eeg"
+      enabled: true
+      gain: "24x"
+      notes: "OpenBCI Mark IV Daisy default: Daisy N4P"
+      units: "uV"
+    - index: 13
+      label: "left_upper_trapezius_emg"
+      type: "emg"
+      enabled: true
+      gain: "24x"
+      notes: "Replaces T7. Daisy N5P; logical channel 13 when Cyton channels are 1-8 and Daisy channels are 9-16. Differential posture EMG on top/bottom pins; no EEG SRB2 reference assumption."
+      units: "uV"
+    - index: 14
+      label: "right_upper_trapezius_emg"
+      type: "emg"
+      enabled: true
+      gain: "24x"
+      notes: "Replaces T8. Daisy N6P; logical channel 14 when Cyton channels are 1-8 and Daisy channels are 9-16. Differential posture EMG on top/bottom pins; no EEG SRB2 reference assumption."
+      units: "uV"
+    - index: 15
+      label: "P3"
+      type: "eeg"
+      enabled: true
+      gain: "24x"
+      notes: "OpenBCI Mark IV Daisy default: Daisy N7P"
+      units: "uV"
+    - index: 16
+      label: "P4"
+      type: "eeg"
+      enabled: true
+      gain: "24x"
+      notes: "OpenBCI Mark IV Daisy default: Daisy N8P"
+      units: "uV"
+
+polar:
+  enabled: true
+  required: false
+  device_id: "Polar H10 182CAD31"
+  stream_name_ecg: "slopodoro_polar_ecg"
+  stream_name_hr: "slopodoro_polar_hr_rr"
+  source_id_ecg: "polar_h10_ecg"
+  source_id_hr: "polar_h10_hr_rr"
+  expected_ecg_sample_rate_hz: 130
+  collect_ecg: true
+  collect_hr_rr: true
+  scan_timeout_seconds: 12
+  reconnect_delay_seconds: 3
+
+lsl:
+  marker_stream_name: "slopodoro_markers"
+  feature_stream_name: "slopodoro_features"
+  score_stream_name: "slopodoro_scores"
+
+calibration:
+  eyes_open_seconds: 120
+  eyes_closed_seconds: 60
+  focused_task_seconds: 300
+  strain_neutral_seconds: 30
+  strain_reference_seconds: 30
+  min_valid_eeg_windows: 8
+  min_valid_emg_windows: 4
+  max_artifact_fraction: 0.45
+
+features:
+  eeg_window_seconds: 4
+  eeg_step_seconds: 1
+  emg_window_seconds: 2
+  emg_step_seconds: 0.5
+  ecg_fast_window_seconds: 30
+  hrv_window_seconds: 120
+  notch_hz: 60
+  eeg_bandpass_hz: [1, 40]
+  emg_bandpass_hz: [20, 45]
+  eeg_bands:
+    delta: [1, 4]
+    theta: [4, 8]
+    alpha: [8, 13]
+    beta: [13, 30]
+
+scoring:
+  min_valid_eeg_fraction: 0.65
+  min_valid_emg_fraction: 0.65
+  slop_detection_minutes: 3
+  strain_detection_seconds: 20
+  use_polar_context: true
+  signal_quality_bad_threshold: 55
+  focus_break_threshold: 45
+  strain_notice_threshold: 70
+  state_cooldown_seconds: 10
+  emg_affects_focus: false
+
+synthetic:
+  calibration_phase_seconds: 14
+  run_seconds: 36
+  chunk_seconds: 1
+  seed: 42
