@@ -15,20 +15,30 @@ def clamp01(value):
     return min(1.0, max(0.0, value))
 
 
-def scripted(elapsed):
+def eased01(value):
+    bounded = clamp01(value)
+    return 0.5 - 0.5 * math.cos(math.pi * bounded)
+
+
+def scripted(elapsed, _state):
     phase = (elapsed % 60.0) / 30.0
     rising = phase <= 1.0
-    t = phase if rising else phase - 1.0
-    eased = 0.5 - 0.5 * math.cos(math.pi * t)
-    focus = 0.18 + 0.68 * (eased if rising else 1.0 - eased)
-    fatigue = 0.82 - 0.64 * (eased if rising else 1.0 - eased)
+    t = eased01(phase if rising else phase - 1.0)
+    focus = 0.18 + 0.68 * (t if rising else 1.0 - t)
+    fatigue = 0.82 - 0.64 * (t if rising else 1.0 - t)
     return focus, fatigue
 
 
-def random_walk(state):
+def sleepy(elapsed, _state):
+    fatigue = min(0.95, 0.95 * (elapsed / 60.0))
+    focus = max(0.12, 0.9 - fatigue * 0.78)
+    return focus, fatigue
+
+
+def random_walk(_elapsed, state):
     for key in ("focus", "fatigue"):
         state[key] = clamp01(state[key] + random.uniform(-0.055, 0.055))
-        state[key] = 0.85 * state[key] + 0.15 * 0.5
+        state[key] = 0.88 * state[key] + 0.12 * 0.5
     return state["focus"], state["fatigue"]
 
 
@@ -44,11 +54,16 @@ def subscores(focus, fatigue):
 
 
 async def stream(websocket, scenario, calibration_seconds):
+    scenarios = {
+        "random_walk": random_walk,
+        "scripted": scripted,
+        "sleepy": sleepy,
+    }
     start = time.monotonic()
-    state = {"focus": 0.5, "fatigue": 0.4}
+    state = {"focus": 0.5, "fatigue": 0.35}
     while True:
         elapsed = time.monotonic() - start
-        focus, fatigue = scripted(elapsed) if scenario == "scripted" else random_walk(state)
+        focus, fatigue = scenarios[scenario](elapsed, state)
         calibrating = elapsed < calibration_seconds
         message = {
             "ts": time.time(),
@@ -66,7 +81,7 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="localhost")
     parser.add_argument("--port", default=8765, type=int)
-    parser.add_argument("--scenario", choices=("random_walk", "scripted"), default="random_walk")
+    parser.add_argument("--scenario", choices=("random_walk", "scripted", "sleepy"), default="random_walk")
     parser.add_argument("--calibration-seconds", default=0.0, type=float)
     args = parser.parse_args()
 

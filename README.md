@@ -1,25 +1,55 @@
-# BCI Focus & Fatigue Indicator
+# Fatigue Cat Chrome Extension
 
-Phase 1 is a Chrome MV3 extension that reads live `focus` and `fatigue` samples from `ws://localhost:8765`. It includes a mock WebSocket server for visual verification before the LSL/DSP bridge is added.
+Chrome MV3 extension that shows a pixel cat along the bottom of normal web pages. The cat responds live to `focus` and `fatigue` samples from a WebSocket stream. It defaults to `ws://localhost:8765/`, and the popup can point it at another `ws://` or `wss://` endpoint.
+
+## Sprite Sheet
+
+The provided sprite sheet is copied byte-for-byte into:
+
+```text
+extension/cat sprite sheet.png
+```
+
+Chrome did not paint the URL-encoded filename from page CSS in local testing, so the extension also includes a byte-identical runtime copy:
+
+```text
+extension/cat-sprite-sheet.png
+```
+
+Measured layout:
+
+```text
+image: 256 x 320
+frame: 32 x 32
+grid: 8 columns x 10 rows
+row frame counts: 4, 4, 4, 4, 8, 8, 4, 6, 7, 8
+```
+
+`cat.js` maps focus and fatigue to three visible moods:
+
+- Focused: high focus with low fatigue parks the cat sleeping/dozing in the bottom-right corner.
+- Drifting: medium focus or mild fatigue makes the cat wander slowly along the bottom edge.
+- Break needed: high fatigue or very low focus makes the cat run fast and jump while bouncing between window edges.
 
 ## Run the Mock Server
 
-Install the only mock-server dependency if needed:
+Install the mock-server dependency if needed:
 
 ```bash
-python -m pip install -r requirements-dev.txt
+python3 -m pip install -r requirements-dev.txt
 ```
 
-Start the scripted ramp:
+Run the full fatigue ladder:
 
 ```bash
-python tools/mock_ws.py --scenario scripted
+python3 tools/mock_ws.py --scenario sleepy
 ```
 
-Or use bounded smooth noise:
+Other scenarios:
 
 ```bash
-python tools/mock_ws.py --scenario random_walk
+python3 tools/mock_ws.py --scenario scripted
+python3 tools/mock_ws.py --scenario random_walk
 ```
 
 ## Load the Extension
@@ -27,9 +57,28 @@ python tools/mock_ws.py --scenario random_walk
 1. Open `chrome://extensions`.
 2. Enable Developer mode.
 3. Click Load unpacked.
-4. Select the `extension/` directory.
+4. Select `/Users/casperdong/Slopadoro/extension`.
 
-The badge shows `...` while disconnected or calibrating. When live samples arrive, the badge tracks focus from `0` to `100`, and the badge color shifts as fatigue rises.
+Open any normal web page after the extension loads. Chrome cannot inject content scripts into pages like `chrome://extensions` or the Chrome Web Store, so test on a regular `https://` page.
+
+To use a non-local stream, open the extension popup, change Stream URL, and click Save. For example, a bridge on another computer on your network might use `ws://192.168.1.50:8765/`; a hosted bridge should use `wss://`.
+
+To let another browser or device connect to the mock server over your local network, start it with:
+
+```bash
+python3 tools/mock_ws.py --host 0.0.0.0 --scenario sleepy
+```
+
+## Behavior
+
+- Badge shows `...` while disconnected or calibrating.
+- Badge shows `0` to `99` from focus when live.
+- Badge color becomes redder as fatigue rises.
+- The cat hides while calibrating, when fatigue is `null`, or when the WebSocket disconnects.
+- High focus plus low fatigue makes the cat sleep in the corner.
+- Medium focus/fatigue makes the cat wander.
+- High fatigue or very low focus makes the cat jump and run around.
+- A notification fires after fatigue stays above `0.75` for 30 seconds, then enters a 5-minute cooldown.
 
 ## Contract
 

@@ -1,29 +1,28 @@
+const DEFAULT_WS_URL = "ws://localhost:8765/";
 const STORAGE_KEYS = {
   sample: "latestSample",
-  status: "connectionStatus"
+  status: "connectionStatus",
+  wsUrl: "wsUrl"
 };
 
-const MAX_HISTORY = 240;
-const NEUTRAL_VALUE = 0.5;
-
 const els = {
-  connectionText: document.getElementById("connectionText"),
-  statusDot: document.getElementById("statusDot"),
+  statusText: document.getElementById("statusText"),
+  calibratingLabel: document.getElementById("calibratingLabel"),
+  endpointForm: document.getElementById("endpointForm"),
+  wsUrlInput: document.getElementById("wsUrlInput"),
+  endpointMessage: document.getElementById("endpointMessage"),
   focusValue: document.getElementById("focusValue"),
   fatigueValue: document.getElementById("fatigueValue"),
   focusBar: document.getElementById("focusBar"),
   fatigueBar: document.getElementById("fatigueBar"),
-  sparkline: document.getElementById("sparkline"),
-  sourceEeg: document.getElementById("sourceEeg"),
-  sourceEcg: document.getElementById("sourceEcg"),
-  sourceEmg: document.getElementById("sourceEmg"),
-  subscores: document.getElementById("subscores")
+  eegDot: document.getElementById("eegDot"),
+  ecgDot: document.getElementById("ecgDot"),
+  emgDot: document.getElementById("emgDot")
 };
 
 let latestSample = null;
 let connectionStatus = null;
-let lastHistoryTs = null;
-let history = [];
+let configuredWsUrl = DEFAULT_WS_URL;
 
 function clamp01(value) {
   if (typeof value !== "number" || Number.isNaN(value)) {
@@ -32,58 +31,48 @@ function clamp01(value) {
   return Math.min(1, Math.max(0, value));
 }
 
-function formatPercent(value) {
-  const bounded = clamp01(value);
-  return bounded === null ? "--" : String(Math.round(bounded * 100));
-}
-
-function displayValue(value, neutralWhenNull = false) {
-  const bounded = clamp01(value);
-  return bounded === null ? (neutralWhenNull ? NEUTRAL_VALUE : null) : bounded;
-}
-
-function setMetric(valueEl, barEl, value, neutral) {
-  const bounded = displayValue(value, neutral);
-  valueEl.textContent = neutral || bounded === null ? "--" : formatPercent(bounded);
+function setBar(valueEl, barEl, value, disabled) {
+  const bounded = disabled ? null : clamp01(value);
+  valueEl.textContent = bounded === null ? "--" : String(Math.round(bounded * 100));
   barEl.style.width = `${Math.round((bounded ?? 0) * 100)}%`;
 }
 
-function setSource(el, isActive) {
-  el.classList.toggle("active", Boolean(isActive));
+function setDot(el, active) {
+  el.classList.toggle("active", Boolean(active));
 }
 
-function renderSubscores(subscores = {}) {
-  const entries = Object.entries(subscores);
-  els.subscores.replaceChildren();
-
-  if (entries.length === 0) {
-    const term = document.createElement("dt");
-    term.textContent = "No subscores";
-    const value = document.createElement("dd");
-    value.textContent = "--";
-    els.subscores.append(term, value);
-    return;
+function normalizeWsUrl(value) {
+  if (typeof value !== "string") {
+    return null;
   }
 
-  for (const [name, rawValue] of entries) {
-    const term = document.createElement("dt");
-    term.textContent = name;
-    const value = document.createElement("dd");
-    value.textContent = typeof rawValue === "number" ? rawValue.toFixed(2) : "null";
-    els.subscores.append(term, value);
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+      return null;
+    }
+    return url.href;
+  } catch {
+    return null;
   }
 }
 
-function statusLabel(sample, status) {
-  const state = status?.state ?? "disconnected";
-  if (state === "calibrating" || sample?.calibrating) {
+function shortWsUrl(value) {
+  const normalized = normalizeWsUrl(value) ?? DEFAULT_WS_URL;
+  const url = new URL(normalized);
+  return `${url.protocol}//${url.host}`;
+}
+
+function statusText(sample, status) {
+  const stream = shortWsUrl(status?.url ?? configuredWsUrl);
+  if (status?.state === "calibrating" || (status?.state === "connected" && sample?.calibrating)) {
     return "Calibrating baseline";
   }
-  if (state === "connected") {
-    return "Live from localhost:8765";
+  if (status?.state === "connected") {
+    return `Live from ${stream}`;
   }
-  if (state === "connecting") {
-    return "Connecting to localhost:8765";
+  if (status?.state === "connecting") {
+    return `Connecting to ${stream}`;
   }
   if (status?.nextRetryMs) {
     return `Disconnected; retrying in ${Math.round(status.nextRetryMs / 1000)}s`;
@@ -91,99 +80,19 @@ function statusLabel(sample, status) {
   return "Disconnected";
 }
 
-function pushHistory(sample) {
-  if (!sample || sample.ts === lastHistoryTs) {
-    return;
-  }
-
-  lastHistoryTs = sample.ts;
-  history.push({
-    focus: clamp01(sample.focus),
-    fatigue: clamp01(sample.fatigue)
-  });
-
-  if (history.length > MAX_HISTORY) {
-    history = history.slice(history.length - MAX_HISTORY);
-  }
-}
-
-function resizeCanvas(canvas) {
-  const dpr = window.devicePixelRatio || 1;
-  const width = canvas.clientWidth;
-  const height = canvas.clientHeight;
-  const targetWidth = Math.round(width * dpr);
-  const targetHeight = Math.round(height * dpr);
-
-  if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
-  }
-
-  const ctx = canvas.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  return { ctx, width, height };
-}
-
-function drawSeries(ctx, points, width, height, color) {
-  if (points.length === 0) {
-    return;
-  }
-
-  ctx.beginPath();
-  points.forEach((point, index) => {
-    const x = points.length === 1 ? width - 8 : 8 + (index / (points.length - 1)) * (width - 16);
-    const y = 8 + (1 - point) * (height - 16);
-    if (index === 0) {
-      ctx.moveTo(x, y);
-    } else {
-      ctx.lineTo(x, y);
-    }
-  });
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.lineJoin = "round";
-  ctx.lineCap = "round";
-  ctx.stroke();
-}
-
-function drawSparkline() {
-  const { ctx, width, height } = resizeCanvas(els.sparkline);
-  ctx.clearRect(0, 0, width, height);
-
-  ctx.strokeStyle = "#e5e7eb";
-  ctx.lineWidth = 1;
-  for (const fraction of [0.25, 0.5, 0.75]) {
-    const y = Math.round(height * fraction) + 0.5;
-    ctx.beginPath();
-    ctx.moveTo(8, y);
-    ctx.lineTo(width - 8, y);
-    ctx.stroke();
-  }
-
-  const focus = history.map((point) => point.focus).filter((value) => value !== null);
-  const fatigue = history.map((point) => point.fatigue).filter((value) => value !== null);
-  drawSeries(ctx, focus, width, height, "#2563eb");
-  drawSeries(ctx, fatigue, width, height, "#c2410c");
-}
-
 function render() {
   const sample = latestSample;
-  const state = sample?.calibrating ? "calibrating" : connectionStatus?.state ?? "disconnected";
-  const neutral = state !== "connected";
+  const state = connectionStatus?.state ?? "disconnected";
+  const calibrating = Boolean(state === "calibrating" || (state === "connected" && sample?.calibrating));
+  const live = state === "connected" && !calibrating;
 
-  els.connectionText.textContent = statusLabel(sample, connectionStatus);
-  els.statusDot.className = `status-dot ${state}`;
-
-  setMetric(els.focusValue, els.focusBar, sample?.focus, neutral || sample?.focus === null);
-  setMetric(els.fatigueValue, els.fatigueBar, sample?.fatigue, neutral || sample?.fatigue === null);
-
-  setSource(els.sourceEeg, state !== "disconnected" && sample?.sources?.eeg);
-  setSource(els.sourceEcg, state !== "disconnected" && sample?.sources?.ecg);
-  setSource(els.sourceEmg, state !== "disconnected" && sample?.sources?.emg);
-  renderSubscores(sample?.subscores);
-
-  pushHistory(sample);
-  drawSparkline();
+  els.statusText.textContent = statusText(sample, connectionStatus);
+  els.calibratingLabel.hidden = !calibrating;
+  setBar(els.focusValue, els.focusBar, sample?.focus, !live);
+  setBar(els.fatigueValue, els.fatigueBar, sample?.fatigue, !live);
+  setDot(els.eegDot, live && sample?.sources?.eeg);
+  setDot(els.ecgDot, live && sample?.sources?.ecg);
+  setDot(els.emgDot, live && sample?.sources?.emg);
 }
 
 chrome.storage.session.get([STORAGE_KEYS.sample, STORAGE_KEYS.status], (items) => {
@@ -192,19 +101,42 @@ chrome.storage.session.get([STORAGE_KEYS.sample, STORAGE_KEYS.status], (items) =
   render();
 });
 
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== "session") {
-    return;
-  }
-
-  if (changes[STORAGE_KEYS.sample]) {
-    latestSample = changes[STORAGE_KEYS.sample].newValue ?? null;
-  }
-  if (changes[STORAGE_KEYS.status]) {
-    connectionStatus = changes[STORAGE_KEYS.status].newValue ?? null;
-  }
-
+chrome.storage.local.get({ [STORAGE_KEYS.wsUrl]: DEFAULT_WS_URL }, (items) => {
+  configuredWsUrl = normalizeWsUrl(items[STORAGE_KEYS.wsUrl]) ?? DEFAULT_WS_URL;
+  els.wsUrlInput.value = configuredWsUrl;
   render();
 });
 
-window.addEventListener("resize", drawSparkline);
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === "local" && changes[STORAGE_KEYS.wsUrl]) {
+    configuredWsUrl = normalizeWsUrl(changes[STORAGE_KEYS.wsUrl].newValue) ?? DEFAULT_WS_URL;
+    if (document.activeElement !== els.wsUrlInput) {
+      els.wsUrlInput.value = configuredWsUrl;
+    }
+    els.endpointMessage.textContent = "Saved";
+  }
+
+  if (areaName === "session") {
+    if (changes[STORAGE_KEYS.sample]) {
+      latestSample = changes[STORAGE_KEYS.sample].newValue ?? null;
+    }
+    if (changes[STORAGE_KEYS.status]) {
+      connectionStatus = changes[STORAGE_KEYS.status].newValue ?? null;
+    }
+  }
+  render();
+});
+
+els.endpointForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  const nextUrl = normalizeWsUrl(els.wsUrlInput.value);
+  if (!nextUrl) {
+    els.endpointMessage.textContent = "Use a ws:// or wss:// URL";
+    return;
+  }
+
+  els.wsUrlInput.value = nextUrl;
+  els.endpointMessage.textContent = "Saving...";
+  chrome.storage.local.set({ [STORAGE_KEYS.wsUrl]: nextUrl });
+});

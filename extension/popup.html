@@ -3,53 +3,52 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>BCI Focus & Fatigue</title>
+    <title>Fatigue Cat</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
-    <main class="popup-shell">
-      <header class="topbar">
-        <div>
-          <h1>Focus & Fatigue</h1>
-          <p id="connectionText" class="status-text">Connecting</p>
-        </div>
-        <span id="statusDot" class="status-dot" aria-label="connection status"></span>
+    <main class="shell">
+      <header>
+        <h1>Fatigue Cat</h1>
+        <p id="statusText">Connecting</p>
       </header>
 
-      <section class="metrics" aria-label="live metrics">
-        <article class="metric" data-metric="focus">
-          <div class="metric-header">
-            <span>Focus</span>
-            <strong id="focusValue">--</strong>
-          </div>
-          <div class="bar-track">
-            <div id="focusBar" class="bar-fill focus"></div>
-          </div>
-        </article>
+      <p id="calibratingLabel" class="calibrating" hidden>Calibrating...</p>
 
-        <article class="metric" data-metric="fatigue">
-          <div class="metric-header">
-            <span>Fatigue</span>
-            <strong id="fatigueValue">--</strong>
-          </div>
-          <div class="bar-track">
-            <div id="fatigueBar" class="bar-fill fatigue"></div>
-          </div>
-        </article>
+      <form id="endpointForm" class="endpoint">
+        <label for="wsUrlInput">Stream URL</label>
+        <div class="endpoint-row">
+          <input id="wsUrlInput" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="ws://localhost:8765/">
+          <button type="submit">Save</button>
+        </div>
+        <p id="endpointMessage" aria-live="polite"></p>
+      </form>
+
+      <section class="metric">
+        <div class="metric-row">
+          <span>Focus</span>
+          <strong id="focusValue">--</strong>
+        </div>
+        <div class="track">
+          <div id="focusBar" class="fill focus"></div>
+        </div>
       </section>
 
-      <canvas id="sparkline" width="312" height="96" aria-label="focus and fatigue sparkline"></canvas>
-
-      <section class="sources" aria-label="sensor sources">
-        <span id="sourceEeg" class="source">EEG</span>
-        <span id="sourceEcg" class="source">ECG</span>
-        <span id="sourceEmg" class="source">EMG</span>
+      <section class="metric">
+        <div class="metric-row">
+          <span>Fatigue</span>
+          <strong id="fatigueValue">--</strong>
+        </div>
+        <div class="track">
+          <div id="fatigueBar" class="fill fatigue"></div>
+        </div>
       </section>
 
-      <details class="debug">
-        <summary>Subscores</summary>
-        <dl id="subscores"></dl>
-      </details>
+      <section class="sources" aria-label="sources">
+        <span><i id="eegDot"></i>EEG</span>
+        <span><i id="ecgDot"></i>ECG</span>
+        <span><i id="emgDot"></i>EMG</span>
+      </section>
     </main>
     <script src="popup.js"></script>
   </body>
