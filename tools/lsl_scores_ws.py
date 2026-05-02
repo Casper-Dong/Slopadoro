@@ -48,11 +48,16 @@ def score_frame_to_contract(frame: dict[str, Any], lsl_ts: float | None = None) 
     openbci_missing = bool(flags.get("openbci_missing") or state == "openbci_missing")
     polar_missing = bool(flags.get("polar_missing") or state == "polar_missing")
     calibrating = bool(frame.get("calibrating") or state == "calibrating")
+    raw_sources = frame.get("sources") if isinstance(frame.get("sources"), dict) else {}
 
-    sources = {
+    fallback_sources = {
         "eeg": not openbci_missing,
         "ecg": not polar_missing,
         "emg": not openbci_missing,
+    }
+    sources = {
+        name: bool(raw_sources.get(name, fallback))
+        for name, fallback in fallback_sources.items()
     }
 
     return {
@@ -96,7 +101,7 @@ async def read_lsl_scores(args: argparse.Namespace, state: BridgeState) -> None:
                 continue
             inlet = StreamInlet(info, max_buflen=5)
             last_seen = time.monotonic()
-            print(f"resolved LSL score stream: {info.name()} ({info.type()})")
+            print(f"resolved LSL score stream: {info.name()} ({info.type()})", flush=True)
 
         sample, lsl_ts = inlet.pull_sample(timeout=0.0)
         if sample:
@@ -105,7 +110,7 @@ async def read_lsl_scores(args: argparse.Namespace, state: BridgeState) -> None:
                 state.latest = score_frame_to_contract(frame, lsl_ts)
                 last_seen = time.monotonic()
             except (TypeError, json.JSONDecodeError, ValueError) as exc:
-                print(f"ignoring malformed score frame: {exc}")
+                print(f"ignoring malformed score frame: {exc}", flush=True)
         elif time.monotonic() - last_seen > args.stale_seconds:
             state.latest = dormant_sample("lsl_scores_stale")
             inlet.close_stream()
@@ -115,13 +120,13 @@ async def read_lsl_scores(args: argparse.Namespace, state: BridgeState) -> None:
 
 
 async def serve_client(websocket: Any, state: BridgeState, interval_seconds: float) -> None:
-    print("extension connected")
+    print("extension connected", flush=True)
     try:
         while True:
             await websocket.send(json.dumps(state.latest, separators=(",", ":")))
             await asyncio.sleep(interval_seconds)
     except websockets.ConnectionClosed:
-        print("extension disconnected")
+        print("extension disconnected", flush=True)
 
 
 async def main_async(args: argparse.Namespace) -> None:
@@ -135,7 +140,7 @@ async def main_async(args: argparse.Namespace) -> None:
         await serve_client(websocket, state, args.output_interval_seconds)
 
     async with websockets.serve(handler, args.host, args.port):
-        print(f"LSL score bridge listening on ws://{args.host}:{args.port}")
+        print(f"LSL score bridge listening on ws://{args.host}:{args.port}", flush=True)
         try:
             await asyncio.Future()
         finally:
@@ -160,4 +165,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main_async(parse_args()))
     except KeyboardInterrupt:
-        print("\nLSL score bridge stopped")
+        print("\nLSL score bridge stopped", flush=True)

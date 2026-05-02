@@ -186,6 +186,9 @@ scoring:
   strain_notice_threshold: 70
   state_cooldown_seconds: 10
   emg_affects_focus: false
+  hackathon_mode: true
+  hackathon_bad_signal_threshold: 15
+  hackathon_min_usable_eeg_channels: 0
 
 synthetic:
   calibration_phase_seconds: 14

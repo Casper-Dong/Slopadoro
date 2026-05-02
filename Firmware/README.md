@@ -100,6 +100,18 @@ python -m slopodoro_acq.main --config config/slopodoro_acquisition.yaml --mode r
 
 Stop live acquisition with `Ctrl-C`. The shutdown handler writes `acquisition_stop`, flushes files, releases OpenBCI, and disconnects Polar.
 
+For hackathon demo runs, `scoring.hackathon_mode: true` relaxes signal-quality gating so marginal EEG windows still produce moving bandpower-based focus/fatigue scores. This is not a medical or production-quality interpretation; it is a demo fallback for keeping the extension responsive when calibration is rejected.
+
+If a firmware run is already publishing `slopodoro_features` but the regular `slopodoro_scores` output is stuck in `bad_signal`, use the root-level feature bridge instead of recalibrating:
+
+```powershell
+cd C:\Users\hocke\OneDrive\Documents\GitHub\Slopadoro
+python tools/hackathon_live_bridge.py
+```
+
+That bridge feeds the extension at `ws://127.0.0.1:8765/` and opens a browser dashboard at `http://127.0.0.1:8766/`.
+The dashboard includes score trends, EEG band percentages, posture EMG strain, ECG context, and raw EEG/EMG/ECG traces from the live LSL streams. In this bridge, posture strain is a quick-derivative spike score from the two raw trapezius EMG channels, so steady EMG amplitude does not count as a strain notice by itself.
+
 ## Live Validation Plot
 
 To visually validate acquisition, start the acquisition process in one terminal, then run the validation plot in a second terminal:

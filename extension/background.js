@@ -122,6 +122,10 @@ function normalizeWsUrl(value) {
   try {
     const url = new URL(value.trim());
     if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        const embedded = url.searchParams.get("ws") || url.searchParams.get("extensionWs") || url.searchParams.get("dashboardWs");
+        return embedded ? normalizeWsUrl(embedded) : null;
+      }
       return null;
     }
     return url.href;
@@ -494,6 +498,22 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
   wsUrl = nextUrl;
   restartConnection("endpoint changed");
+});
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== "restartConnection") {
+    return false;
+  }
+
+  const nextUrl = normalizeWsUrl(message.wsUrl);
+  if (!nextUrl) {
+    sendResponse({ ok: false, error: "invalid websocket url" });
+    return false;
+  }
+
+  wsUrl = nextUrl;
+  restartConnection("manual reconnect");
+  sendResponse({ ok: true, url: wsUrl });
+  return false;
 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === RECONNECT_ALARM) {

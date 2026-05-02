@@ -229,6 +229,10 @@ function normalizeWsUrl(value) {
   try {
     const url = new URL(value.trim());
     if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        const embedded = url.searchParams.get("ws") || url.searchParams.get("extensionWs") || url.searchParams.get("dashboardWs");
+        return embedded ? normalizeWsUrl(embedded) : null;
+      }
       return null;
     }
     return url.href;
@@ -330,11 +334,19 @@ els.endpointForm.addEventListener("submit", (event) => {
 
   const nextUrl = normalizeWsUrl(els.wsUrlInput.value);
   if (!nextUrl) {
-    els.endpointMessage.textContent = "Use a ws:// or wss:// URL";
+    els.endpointMessage.textContent = "Use ws://, wss://, or a dashboard URL with ?ws=";
     return;
   }
 
   els.wsUrlInput.value = nextUrl;
-  els.endpointMessage.textContent = "Saving...";
-  chrome.storage.local.set({ [STORAGE_KEYS.wsUrl]: nextUrl });
+  els.endpointMessage.textContent = "Reconnecting...";
+  chrome.storage.local.set({ [STORAGE_KEYS.wsUrl]: nextUrl }, () => {
+    chrome.runtime.sendMessage({ type: "restartConnection", wsUrl: nextUrl }, (response) => {
+      if (chrome.runtime.lastError) {
+        els.endpointMessage.textContent = "Saved; reopen extension if needed";
+        return;
+      }
+      els.endpointMessage.textContent = response?.ok ? "Reconnected" : "Saved; reconnect failed";
+    });
+  });
 });

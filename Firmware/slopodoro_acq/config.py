@@ -140,6 +140,9 @@ class ScoringConfig:
     strain_notice_threshold: float = 70.0
     state_cooldown_seconds: float = 10.0
     emg_affects_focus: bool = False
+    hackathon_mode: bool = False
+    hackathon_bad_signal_threshold: float = 15.0
+    hackathon_min_usable_eeg_channels: int = 4
 
 
 @dataclass(frozen=True)
@@ -281,6 +284,9 @@ def _parse_config(raw: dict[str, Any], config_path: Path) -> AcquisitionConfig:
         strain_notice_threshold=float(scoring_raw.get("strain_notice_threshold", 70.0)),
         state_cooldown_seconds=float(scoring_raw.get("state_cooldown_seconds", 10.0)),
         emg_affects_focus=bool(scoring_raw.get("emg_affects_focus", False)),
+        hackathon_mode=bool(scoring_raw.get("hackathon_mode", False)),
+        hackathon_bad_signal_threshold=float(scoring_raw.get("hackathon_bad_signal_threshold", 15.0)),
+        hackathon_min_usable_eeg_channels=int(scoring_raw.get("hackathon_min_usable_eeg_channels", 4)),
     )
 
     syn_raw = raw.get("synthetic") or {}

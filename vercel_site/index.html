@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slopodoro Live</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <header class="topbar">
+      <div>
+        <h1>Slopodoro Live</h1>
+        <div id="status" class="status">idle</div>
+      </div>
+      <form id="streamForm" class="stream-bar">
+        <label for="wsUrl">Stream URL</label>
+        <input id="wsUrl" name="wsUrl" type="url" autocomplete="off" spellcheck="false" placeholder="wss://your-live-stream.example">
+        <button type="submit">Connect</button>
+        <button type="button" id="copyStreamUrl">Copy</button>
+      </form>
+    </header>
+
+    <section class="share-row">
+      <span>Extension URL</span>
+      <code id="extensionUrl">--</code>
+    </section>
+
+    <section class="metrics">
+      <div class="panel metric"><span>Focus</span><strong id="focus">--</strong></div>
+      <div class="panel metric"><span>Fatigue</span><strong id="fatigue">--</strong></div>
+      <div class="panel metric"><span>EMG Strain</span><strong id="strain">--</strong></div>
+      <div class="panel metric"><span>Signal Quality</span><strong id="quality">--</strong></div>
+    </section>
+
+    <section class="charts">
+      <div class="panel"><h2>Scores</h2><canvas id="scores"></canvas></div>
+      <div class="panel"><h2>EEG Bands, percent of total power</h2><canvas id="bands"></canvas></div>
+      <div class="panel"><h2>Posture EMG</h2><canvas id="emg"></canvas></div>
+      <div class="panel"><h2>ECG Context</h2><canvas id="ecg"></canvas></div>
+      <div class="panel"><h2>Raw EEG</h2><canvas id="rawEeg"></canvas></div>
+      <div class="panel"><h2>Raw Posture EMG</h2><canvas id="rawEmg"></canvas></div>
+      <div class="panel"><h2>Raw ECG</h2><canvas id="rawEcg"></canvas></div>
+    </section>
+
+    <section class="panel detail" id="detail">Waiting for a live stream.</section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

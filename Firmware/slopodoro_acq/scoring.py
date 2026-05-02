@@ -29,14 +29,14 @@ class RuleBasedScorer:
         validity = feature_frame.get("validity", {})
         source_health = source_health or {}
 
-        signal_quality = _signal_quality_score(validity)
-        focus_score, fatigue_score = _focus_scores(features, validity)
+        signal_quality = _signal_quality_score(validity, self.cfg)
+        focus_score, fatigue_score = _focus_scores(features, validity, self.cfg)
         emg_score = float(np.clip(features.get("emg.emg_strain_score_0_100", 0.0), 0.0, 100.0))
         recovery_score = _recovery_context_score(features)
 
         focus_bad = focus_score < self.cfg.scoring.focus_break_threshold and signal_quality >= self.cfg.scoring.signal_quality_bad_threshold
         strain_bad = emg_score >= self.cfg.scoring.strain_notice_threshold
-        bad_signal = signal_quality < self.cfg.scoring.signal_quality_bad_threshold
+        bad_signal = _bad_signal(validity, signal_quality, self.cfg)
         self._focus_history.append((ts, focus_bad))
         self._strain_history.append((ts, strain_bad))
         self._bad_signal_history.append((ts, bad_signal))
@@ -97,12 +97,28 @@ class RuleBasedScorer:
         return candidate
 
 
-def _signal_quality_score(validity: dict[str, Any]) -> float:
+def _signal_quality_score(validity: dict[str, Any], cfg: AcquisitionConfig) -> float:
     artifact_fraction = float(validity.get("artifact_fraction", 0.0))
     bad_count = float(validity.get("bad_channel_count", len(validity.get("bad_channels", []))))
     eeg_valid = bool(validity.get("eeg_valid", True))
     emg_valid = bool(validity.get("emg_valid", True))
     ecg_valid = bool(validity.get("ecg_valid", True) or validity.get("hrv_window_valid", True))
+
+    if cfg.scoring.hackathon_mode:
+        score = 100.0
+        score -= artifact_fraction * 45.0
+        score -= bad_count * 2.0
+        if bool(validity.get("line_noise_heavy", False)):
+            score -= 5.0
+        if not emg_valid:
+            score -= 6.0
+        if not ecg_valid:
+            score -= 3.0
+        finite_fraction = float(validity.get("finite_fraction", 1.0))
+        if finite_fraction < 0.95:
+            score -= (0.95 - finite_fraction) * 100.0
+        return float(np.clip(score, 0.0, 100.0))
+
     score = 100.0
     score -= artifact_fraction * 100.0
     score -= bad_count * 8.0
@@ -115,16 +131,58 @@ def _signal_quality_score(validity: dict[str, Any]) -> float:
     return float(np.clip(score, 0.0, 100.0))
 
 
-def _focus_scores(features: dict[str, Any], validity: dict[str, Any]) -> tuple[float, float]:
-    if not validity.get("eeg_valid", True):
+def _bad_signal(validity: dict[str, Any], signal_quality: float, cfg: AcquisitionConfig) -> bool:
+    if not cfg.scoring.hackathon_mode:
+        return signal_quality < cfg.scoring.signal_quality_bad_threshold
+
+    artifact_fraction = float(validity.get("artifact_fraction", 1.0))
+    finite_fraction = float(validity.get("finite_fraction", 1.0))
+    return bool(finite_fraction < 0.50 or artifact_fraction >= 0.98)
+
+
+def _focus_scores(features: dict[str, Any], validity: dict[str, Any], cfg: AcquisitionConfig) -> tuple[float, float]:
+    if not validity.get("eeg_valid", True) and not cfg.scoring.hackathon_mode:
         return 50.0, 50.0
+
     engagement_z = float(features.get("eeg.engagement_index_z", 0.0))
     theta_beta_z = float(features.get("eeg.theta_beta_ratio_z", 0.0))
     theta_alpha_z = float(features.get("eeg.theta_alpha_ratio_z", 0.0))
     slope = float(features.get("eeg.engagement_index_z_slope", 0.0))
-    focus = 70.0 + 12.0 * engagement_z - 9.0 * theta_beta_z - 4.0 * theta_alpha_z + 20.0 * slope
-    fatigue = 35.0 + 13.0 * theta_beta_z - 10.0 * engagement_z - 20.0 * slope
+
+    has_calibrated_features = any(
+        name in features
+        for name in ("eeg.engagement_index_z", "eeg.theta_beta_ratio_z", "eeg.theta_alpha_ratio_z")
+    )
+    if has_calibrated_features:
+        focus = 70.0 + 12.0 * engagement_z - 9.0 * theta_beta_z - 4.0 * theta_alpha_z + 20.0 * slope
+        fatigue = 35.0 + 13.0 * theta_beta_z - 10.0 * engagement_z - 20.0 * slope
+    else:
+        focus, fatigue = _uncalibrated_band_scores(features, validity)
+
     return float(np.clip(focus, 0.0, 100.0)), float(np.clip(fatigue, 0.0, 100.0))
+
+
+def _uncalibrated_band_scores(features: dict[str, Any], validity: dict[str, Any]) -> tuple[float, float]:
+    delta = _finite_feature(features, "eeg.global_delta")
+    theta = _finite_feature(features, "eeg.global_theta")
+    alpha = _finite_feature(features, "eeg.global_alpha")
+    beta = _finite_feature(features, "eeg.global_beta")
+    artifact = float(np.clip(validity.get("artifact_fraction", 0.0), 0.0, 1.0))
+    epsilon = 1e-9
+    engagement_log = np.log((beta + epsilon) / (theta + alpha + epsilon))
+    slow_log = np.log((theta + delta + epsilon) / (alpha + beta + epsilon))
+    alpha_log = np.log((alpha + epsilon) / (theta + delta + epsilon))
+    focus = 58.0 + 20.0 * np.tanh(engagement_log) + 8.0 * np.tanh(alpha_log) - 10.0 * artifact
+    fatigue = 42.0 + 22.0 * np.tanh(slow_log) - 12.0 * np.tanh(engagement_log) + 14.0 * artifact
+    return float(focus), float(fatigue)
+
+
+def _finite_feature(features: dict[str, Any], name: str, default: float = 0.0) -> float:
+    value = features.get(name, default)
+    if not isinstance(value, (int, float, np.number)):
+        return float(default)
+    value = float(value)
+    return value if np.isfinite(value) and value >= 0.0 else float(default)
 
 
 def _recovery_context_score(features: dict[str, Any]) -> float:
