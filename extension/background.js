@@ -4,8 +4,20 @@ const STORAGE_KEYS = {
   status: "connectionStatus",
   flowLog: "flowLog",
   metricLog: "metricLog",
+  gateEnabled: "gateEnabled",
+  gateBlocklist: "gateBlocklist",
   wsUrl: "wsUrl"
 };
+
+const DEFAULT_GATE_BLOCKLIST = [
+  "reddit.com",
+  "x.com",
+  "twitter.com",
+  "news.ycombinator.com",
+  "youtube.com",
+  "instagram.com",
+  "tiktok.com"
+];
 
 const RECONNECT_ALARM = "fatigue-cat-reconnect";
 const RECONNECT_MIN_MS = 1000;
@@ -31,6 +43,10 @@ let lastMetricLogAtMs = 0;
 let lastMetricLogState = null;
 let lastFlowLogAtMs = 0;
 let lastFlowLogState = null;
+
+if (chrome.storage.session.setAccessLevel) {
+  chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" });
+}
 
 function clamp01(value) {
   if (typeof value !== "number" || Number.isNaN(value)) {
@@ -267,13 +283,13 @@ function setBadge(sample, state) {
   const fatigue = clamp01(sample?.fatigue);
   const live = connected && !calibrating && headsetReady && focus !== null;
   const text = live ? String(Math.min(99, Math.round(focus * 100))) : "...";
-  let title = `Cat fatigue: waiting for ${shortWsUrl()}`;
+  let title = `Monitor your flow state: waiting for ${shortWsUrl()}`;
   if (live) {
-    title = `Cat fatigue: focus ${text}, fatigue ${Math.round((fatigue ?? 0) * 100)}`;
+    title = `Monitor your flow state: focus ${text}, fatigue ${Math.round((fatigue ?? 0) * 100)}`;
   } else if (connected && !headsetReady) {
-    title = "Cat fatigue: waiting for headset";
+    title = "Monitor your flow state: waiting for headset";
   } else if (connected && calibrating) {
-    title = "Cat fatigue: calibrating";
+    title = "Monitor your flow state: calibrating";
   }
 
   chrome.action.setBadgeText({ text });
@@ -482,6 +498,26 @@ function loadConfigAndConnect() {
 
 chrome.runtime.onInstalled.addListener(loadConfigAndConnect);
 chrome.runtime.onStartup.addListener(loadConfigAndConnect);
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== "getGateState") {
+    return false;
+  }
+
+  chrome.storage.session.get([STORAGE_KEYS.sample, STORAGE_KEYS.status], (sessionItems) => {
+    chrome.storage.local.get({
+      [STORAGE_KEYS.gateEnabled]: true,
+      [STORAGE_KEYS.gateBlocklist]: DEFAULT_GATE_BLOCKLIST.join("\n")
+    }, (localItems) => {
+      sendResponse({
+        sample: sessionItems[STORAGE_KEYS.sample] ?? unavailableSample(),
+        status: sessionItems[STORAGE_KEYS.status] ?? { state: "disconnected", connected: false },
+        gateEnabled: Boolean(localItems[STORAGE_KEYS.gateEnabled]),
+        gateBlocklist: localItems[STORAGE_KEYS.gateBlocklist] ?? DEFAULT_GATE_BLOCKLIST.join("\n")
+      });
+    });
+  });
+  return true;
+});
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local" || !changes[STORAGE_KEYS.wsUrl]) {
     return;

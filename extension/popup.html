@@ -3,13 +3,14 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Fatigue Cat</title>
+    <title>Monitor Your Flow State</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
     <main class="shell">
       <header>
-        <h1>Fatigue Cat</h1>
+        <h1>Monitor Your Flow State</h1>
+        <p class="tagline">"Tabbi" the cat wanders between your tabs when you drift out of focus. See how locked in you are with our heatmap tracker!</p>
         <p id="statusText">Connecting</p>
       </header>
 
@@ -22,6 +23,22 @@
           <button type="submit">Save</button>
         </div>
         <p id="endpointMessage" aria-live="polite"></p>
+      </form>
+
+      <form id="gateForm" class="gate-config">
+        <label class="toggle-row">
+          <input id="gateEnabledInput" type="checkbox">
+          <span>Adaptive distraction gate</span>
+        </label>
+        <label for="gateBlocklistInput">Blocklist</label>
+        <textarea id="gateBlocklistInput" rows="4" spellcheck="false"></textarea>
+        <div class="gate-actions">
+          <button type="submit">Save Gate</button>
+          <button id="gateCurrentSiteButton" type="button">Gate Current Site</button>
+          <p id="gateMessage" aria-live="polite"></p>
+        </div>
+        <p id="gateStatus" class="gate-status">Gate status: --</p>
+        <p id="gateSiteStatus" class="gate-status">Current site: --</p>
       </form>
 
       <section class="metric">

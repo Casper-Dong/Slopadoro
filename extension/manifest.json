@@ -1,9 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Fatigue Cat",
-  "description": "Animated cat overlay driven by a focus and fatigue WebSocket stream.",
+  "name": "Monitor Your Flow State",
+  "short_name": "Tabbi",
+  "description": "\"Tabbi\" the cat wanders between your tabs when you drift out of focus. See how locked in you are with our heatmap tracker!",
   "version": "0.1.0",
   "permissions": [
+    "activeTab",
     "alarms",
     "storage",
     "notifications"
@@ -21,7 +23,8 @@
         "<all_urls>"
       ],
       "js": [
-        "cat.js"
+        "cat.js",
+        "gate.js"
       ],
       "run_at": "document_idle"
     }
@@ -38,7 +41,7 @@
     }
   ],
   "action": {
-    "default_title": "Fatigue Cat",
+    "default_title": "Monitor your flow state. \"Tabbi\" the cat wanders between your tabs when you drift out of focus. See how locked in you are with our heatmap tracker!",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/16.png",

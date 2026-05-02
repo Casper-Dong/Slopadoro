@@ -4,14 +4,29 @@ const STORAGE_KEYS = {
   status: "connectionStatus",
   flowLog: "flowLog",
   metricLog: "metricLog",
+  gateEnabled: "gateEnabled",
+  gateBlocklist: "gateBlocklist",
   wsUrl: "wsUrl"
 };
+
+const DEFAULT_GATE_BLOCKLIST = [
+  "reddit.com",
+  "x.com",
+  "twitter.com",
+  "news.ycombinator.com",
+  "youtube.com",
+  "instagram.com",
+  "tiktok.com"
+];
 
 const CHART_W = 240;
 const CHART_H = 64;
 const CHART_PAD_X = 5;
 const CHART_PAD_Y = 5;
 const CHART_VISIBLE_COUNT = 90;
+const GATE_FOCUS_THRESHOLD = 0.38;
+const GATE_FATIGUE_THRESHOLD = 0.72;
+const GATE_SAMPLE_FRESH_MS = 10000;
 
 const els = {
   statusText: document.getElementById("statusText"),
@@ -19,6 +34,13 @@ const els = {
   endpointForm: document.getElementById("endpointForm"),
   wsUrlInput: document.getElementById("wsUrlInput"),
   endpointMessage: document.getElementById("endpointMessage"),
+  gateForm: document.getElementById("gateForm"),
+  gateEnabledInput: document.getElementById("gateEnabledInput"),
+  gateBlocklistInput: document.getElementById("gateBlocklistInput"),
+  gateCurrentSiteButton: document.getElementById("gateCurrentSiteButton"),
+  gateMessage: document.getElementById("gateMessage"),
+  gateStatus: document.getElementById("gateStatus"),
+  gateSiteStatus: document.getElementById("gateSiteStatus"),
   focusValue: document.getElementById("focusValue"),
   fatigueValue: document.getElementById("fatigueValue"),
   focusLine: document.getElementById("focusLine"),
@@ -37,6 +59,9 @@ let connectionStatus = null;
 let configuredWsUrl = DEFAULT_WS_URL;
 let flowLog = [];
 let metricLog = [];
+let gateEnabled = true;
+let gateBlocklist = DEFAULT_GATE_BLOCKLIST.join("\n");
+let currentTabHost = null;
 
 function clamp01(value) {
   if (typeof value !== "number" || Number.isNaN(value)) {
@@ -52,6 +77,16 @@ function setMetricValue(valueEl, value, disabled) {
 
 function setDot(el, active) {
   el.classList.toggle("active", Boolean(active));
+}
+
+function saveLocal(update, messageEl) {
+  chrome.storage.local.set(update, () => {
+    if (chrome.runtime.lastError) {
+      messageEl.textContent = chrome.runtime.lastError.message;
+      return;
+    }
+    messageEl.textContent = "Saved";
+  });
 }
 
 function entryTime(entry) {
@@ -182,14 +217,35 @@ function flowLabel(state) {
 
 function heatClass(state) {
   return {
-    flow: "flow",
-    steady: "steady",
-    drifting: "drifting",
-    break: "break",
+    flow: "productivity",
+    steady: "productivity",
+    drifting: "productivity",
+    break: "productivity",
     waiting: "waiting",
     calibrating: "waiting",
     offline: "offline"
   }[state] ?? "empty";
+}
+
+function productivityScore(entry) {
+  const score = clamp01(entry?.score);
+  if (score !== null) {
+    return score;
+  }
+
+  const focus = clamp01(entry?.focus);
+  const fatigue = clamp01(entry?.fatigue);
+  if (focus === null || fatigue === null) {
+    return null;
+  }
+  return focus * (1 - fatigue);
+}
+
+function productivityColor(value) {
+  const score = clamp01(value) ?? 0;
+  const lightness = 22 + score * 66;
+  const alpha = 0.42 + score * 0.5;
+  return `hsl(142 58% ${lightness.toFixed(1)}% / ${alpha.toFixed(2)})`;
 }
 
 function renderHeatmap() {
@@ -207,10 +263,10 @@ function renderHeatmap() {
   for (const entry of entries) {
     const cell = document.createElement("span");
     const state = heatClass(entry?.state);
-    const score = clamp01(entry?.score);
+    const score = productivityScore(entry);
     cell.className = `heat-cell ${state}`;
-    if (score !== null && (state === "flow" || state === "steady" || state === "drifting" || state === "break")) {
-      cell.style.opacity = String(0.42 + score * 0.58);
+    if (score !== null && state === "productivity") {
+      cell.style.backgroundColor = productivityColor(score);
     }
     const focus = clamp01(entry?.focus);
     const fatigue = clamp01(entry?.fatigue);
@@ -235,6 +291,66 @@ function normalizeWsUrl(value) {
   } catch {
     return null;
   }
+}
+
+function normalizeBlocklistText(value) {
+  const rows = String(value ?? "")
+    .split(/\n|,/)
+    .map((row) => row.trim().toLowerCase())
+    .filter(Boolean)
+    .map((row) => {
+      try {
+        return new URL(row.includes("://") ? row : `https://${row}`).hostname;
+      } catch {
+        return row.replace(/^(\*\.)?/, "").replace(/^www\./, "").replace(/\/.*$/, "");
+      }
+    })
+    .map((host) => host.replace(/^www\./, ""))
+    .filter(Boolean);
+
+  return (rows.length ? [...new Set(rows)] : DEFAULT_GATE_BLOCKLIST).join("\n");
+}
+
+function hostInBlocklist(host, blocklistText) {
+  const normalizedHost = String(host ?? "").toLowerCase().replace(/^www\./, "");
+  if (!normalizedHost) {
+    return false;
+  }
+  return normalizeBlocklistText(blocklistText)
+    .split("\n")
+    .some((entry) => normalizedHost === entry || normalizedHost.endsWith(`.${entry}`));
+}
+
+function updateGateSiteStatus() {
+  if (!currentTabHost) {
+    els.gateSiteStatus.textContent = "Current site: unavailable";
+    return;
+  }
+
+  els.gateSiteStatus.textContent = hostInBlocklist(currentTabHost, gateBlocklist)
+    ? `Current site: ${currentTabHost} is gated`
+    : `Current site: ${currentTabHost} is not gated`;
+}
+
+function loadCurrentTabHost() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (chrome.runtime.lastError || !tabs?.[0]?.url) {
+      updateGateSiteStatus();
+      return;
+    }
+
+    try {
+      const url = new URL(tabs[0].url);
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        updateGateSiteStatus();
+        return;
+      }
+      currentTabHost = url.hostname.toLowerCase().replace(/^www\./, "");
+    } catch {
+      currentTabHost = null;
+    }
+    updateGateSiteStatus();
+  });
 }
 
 function shortWsUrl(value) {
@@ -263,6 +379,24 @@ function statusText(sample, status) {
   return "Disconnected";
 }
 
+function gateStatusText(sample, live) {
+  if (!gateEnabled) {
+    return "Gate status: off";
+  }
+  const sampleFresh = typeof sample?.ts === "number" && Math.abs(Date.now() - sample.ts * 1000) <= GATE_SAMPLE_FRESH_MS;
+  if (!live && !sampleFresh) {
+    return "Gate status: waiting for live focus";
+  }
+
+  const focus = clamp01(sample?.focus);
+  const fatigue = clamp01(sample?.fatigue);
+  const wouldGate = focus !== null && fatigue !== null && (focus <= GATE_FOCUS_THRESHOLD || fatigue >= GATE_FATIGUE_THRESHOLD);
+  if (wouldGate) {
+    return "Gate status: armed on blocklisted sites";
+  }
+  return "Gate status: sharp, not gating";
+}
+
 function render() {
   const sample = latestSample;
   const state = connectionStatus?.state ?? "disconnected";
@@ -282,6 +416,7 @@ function render() {
 
   const currentFlow = flowLog.at(-1)?.state ?? classifyFlow(sample, connectionStatus);
   els.flowState.textContent = flowLabel(currentFlow);
+  els.gateStatus.textContent = gateStatusText(sample, live);
   renderHeatmap();
 }
 
@@ -299,6 +434,19 @@ chrome.storage.local.get({ [STORAGE_KEYS.wsUrl]: DEFAULT_WS_URL }, (items) => {
   render();
 });
 
+chrome.storage.local.get({
+  [STORAGE_KEYS.gateEnabled]: true,
+  [STORAGE_KEYS.gateBlocklist]: DEFAULT_GATE_BLOCKLIST.join("\n")
+}, (items) => {
+  gateEnabled = Boolean(items[STORAGE_KEYS.gateEnabled]);
+  gateBlocklist = normalizeBlocklistText(items[STORAGE_KEYS.gateBlocklist]);
+  els.gateEnabledInput.checked = gateEnabled;
+  els.gateBlocklistInput.value = gateBlocklist;
+  updateGateSiteStatus();
+});
+
+loadCurrentTabHost();
+
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === "local" && changes[STORAGE_KEYS.wsUrl]) {
     configuredWsUrl = normalizeWsUrl(changes[STORAGE_KEYS.wsUrl].newValue) ?? DEFAULT_WS_URL;
@@ -306,6 +454,21 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       els.wsUrlInput.value = configuredWsUrl;
     }
     els.endpointMessage.textContent = "Saved";
+  }
+
+  if (areaName === "local" && changes[STORAGE_KEYS.gateEnabled]) {
+    gateEnabled = Boolean(changes[STORAGE_KEYS.gateEnabled].newValue);
+    els.gateEnabledInput.checked = gateEnabled;
+    els.gateMessage.textContent = "Saved";
+  }
+
+  if (areaName === "local" && changes[STORAGE_KEYS.gateBlocklist]) {
+    gateBlocklist = normalizeBlocklistText(changes[STORAGE_KEYS.gateBlocklist].newValue);
+    if (document.activeElement !== els.gateBlocklistInput) {
+      els.gateBlocklistInput.value = gateBlocklist;
+    }
+    els.gateMessage.textContent = "Saved";
+    updateGateSiteStatus();
   }
 
   if (areaName === "session") {
@@ -336,5 +499,41 @@ els.endpointForm.addEventListener("submit", (event) => {
 
   els.wsUrlInput.value = nextUrl;
   els.endpointMessage.textContent = "Saving...";
-  chrome.storage.local.set({ [STORAGE_KEYS.wsUrl]: nextUrl });
+  saveLocal({ [STORAGE_KEYS.wsUrl]: nextUrl }, els.endpointMessage);
+});
+
+els.gateForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  gateEnabled = els.gateEnabledInput.checked;
+  gateBlocklist = normalizeBlocklistText(els.gateBlocklistInput.value);
+  els.gateBlocklistInput.value = gateBlocklist;
+  els.gateMessage.textContent = "Saving...";
+  saveLocal({
+    [STORAGE_KEYS.gateEnabled]: gateEnabled,
+    [STORAGE_KEYS.gateBlocklist]: gateBlocklist
+  }, els.gateMessage);
+});
+
+els.gateCurrentSiteButton.addEventListener("click", () => {
+  if (!currentTabHost) {
+    els.gateMessage.textContent = "Open a normal web page first";
+    return;
+  }
+
+  const existing = normalizeBlocklistText(els.gateBlocklistInput.value).split("\n");
+  if (!hostInBlocklist(currentTabHost, existing.join("\n"))) {
+    existing.push(currentTabHost);
+  }
+
+  gateEnabled = true;
+  gateBlocklist = normalizeBlocklistText(existing.join("\n"));
+  els.gateEnabledInput.checked = true;
+  els.gateBlocklistInput.value = gateBlocklist;
+  els.gateMessage.textContent = "Saving...";
+  updateGateSiteStatus();
+  saveLocal({
+    [STORAGE_KEYS.gateEnabled]: gateEnabled,
+    [STORAGE_KEYS.gateBlocklist]: gateBlocklist
+  }, els.gateMessage);
 });
