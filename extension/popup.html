@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BCI Focus & Fatigue</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="popup-shell">
+      <header class="topbar">
+        <div>
+          <h1>Focus & Fatigue</h1>
+          <p id="connectionText" class="status-text">Connecting</p>
+        </div>
+        <span id="statusDot" class="status-dot" aria-label="connection status"></span>
+      </header>
+
+      <section class="metrics" aria-label="live metrics">
+        <article class="metric" data-metric="focus">
+          <div class="metric-header">
+            <span>Focus</span>
+            <strong id="focusValue">--</strong>
+          </div>
+          <div class="bar-track">
+            <div id="focusBar" class="bar-fill focus"></div>
+          </div>
+        </article>
+
+        <article class="metric" data-metric="fatigue">
+          <div class="metric-header">
+            <span>Fatigue</span>
+            <strong id="fatigueValue">--</strong>
+          </div>
+          <div class="bar-track">
+            <div id="fatigueBar" class="bar-fill fatigue"></div>
+          </div>
+        </article>
+      </section>
+
+      <canvas id="sparkline" width="312" height="96" aria-label="focus and fatigue sparkline"></canvas>
+
+      <section class="sources" aria-label="sensor sources">
+        <span id="sourceEeg" class="source">EEG</span>
+        <span id="sourceEcg" class="source">ECG</span>
+        <span id="sourceEmg" class="source">EMG</span>
+      </section>
+
+      <details class="debug">
+        <summary>Subscores</summary>
+        <dl id="subscores"></dl>
+      </details>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

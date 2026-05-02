@@ -1,0 +1,200 @@
+:root {
+  color-scheme: light;
+  --bg: #f8fafc;
+  --panel: #ffffff;
+  --text: #111827;
+  --muted: #64748b;
+  --border: #d9e2ec;
+  --track: #e5e7eb;
+  --focus: #2563eb;
+  --fatigue: #c2410c;
+  --ok: #15803d;
+  --warn: #b45309;
+  --bad: #b91c1c;
+  --neutral: #6b7280;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 344px;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.popup-shell {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.status-text {
+  min-height: 18px;
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.status-dot {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--neutral);
+  box-shadow: 0 0 0 3px rgba(107, 114, 128, 0.14);
+}
+
+.status-dot.connected {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.15);
+}
+
+.status-dot.calibrating {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.16);
+}
+
+.status-dot.disconnected,
+.status-dot.connecting {
+  background: var(--neutral);
+}
+
+.metrics {
+  display: grid;
+  gap: 12px;
+}
+
+.metric {
+  display: grid;
+  gap: 7px;
+}
+
+.metric-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.metric-header span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.metric-header strong {
+  min-width: 42px;
+  text-align: right;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.bar-track {
+  position: relative;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--track);
+}
+
+.bar-fill {
+  width: 50%;
+  height: 100%;
+  border-radius: inherit;
+  transform-origin: left center;
+  transition: width 180ms ease-out, background-color 180ms ease-out;
+}
+
+.bar-fill.focus {
+  background: var(--focus);
+}
+
+.bar-fill.fatigue {
+  background: var(--fatigue);
+}
+
+canvas {
+  display: block;
+  width: 312px;
+  height: 96px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.sources {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.source {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.source.active {
+  border-color: rgba(21, 128, 61, 0.28);
+  background: rgba(21, 128, 61, 0.08);
+  color: var(--ok);
+}
+
+.debug {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.debug summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.debug dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  margin: 10px 0 0;
+}
+
+.debug dt,
+.debug dd {
+  margin: 0;
+  font-size: 12px;
+}
+
+.debug dt {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug dd {
+  font-variant-numeric: tabular-nums;
+}
