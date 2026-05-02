@@ -1,7 +1,7 @@
 const SPRITE_URL = chrome.runtime.getURL("cat-sprite-sheet.png");
 const FRAME_W = 32;
 const FRAME_H = 32;
-const SCALE = 3;
+const SCALE = 4;
 const DISPLAY_W = FRAME_W * SCALE;
 const DISPLAY_H = FRAME_H * SCALE;
 const SHEET_W = 256 * SCALE;
