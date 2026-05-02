@@ -3,6 +3,7 @@ const STORAGE_KEYS = {
   sample: "latestSample",
   status: "connectionStatus",
   flowLog: "flowLog",
+  metricLog: "metricLog",
   wsUrl: "wsUrl"
 };
 
@@ -13,6 +14,8 @@ const STALE_AFTER_MS = 2000;
 const FATIGUE_ALERT_THRESHOLD = 0.75;
 const FATIGUE_ALERT_MS = 30000;
 const NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000;
+const METRIC_LOG_INTERVAL_MS = 1000;
+const METRIC_LOG_MAX_ENTRIES = 300;
 const FLOW_LOG_INTERVAL_MS = 5000;
 const FLOW_LOG_MAX_ENTRIES = 360;
 
@@ -24,6 +27,8 @@ let highFatigueSinceMs = null;
 let notificationCooldownUntilMs = 0;
 let wsUrl = DEFAULT_WS_URL;
 let configLoading = false;
+let lastMetricLogAtMs = 0;
+let lastMetricLogState = null;
 let lastFlowLogAtMs = 0;
 let lastFlowLogState = null;
 
@@ -136,6 +141,53 @@ function shortWsUrl() {
 
 function writeSession(update) {
   chrome.storage.session.set(update);
+}
+
+function metricState(sample, connectionState) {
+  const connected = connectionState === "connected" || connectionState === "calibrating";
+
+  if (!connected) {
+    return "offline";
+  }
+  if (sample?.sources?.eeg === false) {
+    return "waiting";
+  }
+  if (sample?.calibrating) {
+    return "calibrating";
+  }
+  return "live";
+}
+
+function roundedMetric(value) {
+  const bounded = clamp01(value);
+  return bounded === null ? null : Number(bounded.toFixed(3));
+}
+
+function maybeLogMetrics(sample, connectionState) {
+  const now = Date.now();
+  const state = metricState(sample, connectionState);
+  const stateChanged = state !== lastMetricLogState;
+
+  if (!stateChanged && now - lastMetricLogAtMs < METRIC_LOG_INTERVAL_MS) {
+    return;
+  }
+
+  lastMetricLogAtMs = now;
+  lastMetricLogState = state;
+
+  const entry = {
+    ts: sample?.ts ?? now / 1000,
+    loggedAt: now,
+    state,
+    focus: state === "live" ? roundedMetric(sample?.focus) : null,
+    fatigue: state === "live" ? roundedMetric(sample?.fatigue) : null
+  };
+
+  chrome.storage.session.get({ [STORAGE_KEYS.metricLog]: [] }, (items) => {
+    const existing = Array.isArray(items[STORAGE_KEYS.metricLog]) ? items[STORAGE_KEYS.metricLog] : [];
+    const next = existing.concat(entry).slice(-METRIC_LOG_MAX_ENTRIES);
+    chrome.storage.session.set({ [STORAGE_KEYS.metricLog]: next });
+  });
 }
 
 function classifyFlow(sample, connectionState) {
@@ -264,6 +316,7 @@ function setStatus(state, detail = {}) {
   };
   writeSession({ [STORAGE_KEYS.status]: status });
   setBadge(detail.sample ?? null, state);
+  maybeLogMetrics(detail.sample ?? null, state);
   maybeLogFlow(detail.sample ?? null, state);
 }
 

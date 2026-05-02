@@ -95,10 +95,9 @@ That bridge reads the firmware `Scores` frames, maps `focus_score_0_100` and `fa
 - High focus plus low fatigue makes the cat sleep in the corner.
 - Medium focus/fatigue makes the cat wander.
 - High fatigue or very low focus makes the cat jump and run around.
-- The popup keeps a bounded session-only flow log and renders the recent states as a heat map.
+- The popup keeps bounded session-only metric and flow logs, rendering focus/fatigue as line charts and recent states as a heat map.
 - A notification fires after fatigue stays above `0.75` for 30 seconds, then enters a 5-minute cooldown.
 
 ## Contract
 
 The frozen WebSocket contract is documented in [docs/websocket-contract.md](docs/websocket-contract.md).
-

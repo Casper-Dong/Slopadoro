@@ -29,8 +29,12 @@
           <span>Focus</span>
           <strong id="focusValue">--</strong>
         </div>
-        <div class="track">
-          <div id="focusBar" class="fill focus"></div>
+        <div class="chart-frame">
+          <svg id="focusChart" class="line-chart focus" viewBox="0 0 240 64" preserveAspectRatio="none" role="img" aria-label="focus over time">
+            <path class="chart-grid" d="M0 16H240M0 32H240M0 48H240"></path>
+            <path id="focusLine" class="chart-line"></path>
+            <circle id="focusDot" class="chart-dot" r="3"></circle>
+          </svg>
         </div>
       </section>
 
@@ -39,8 +43,12 @@
           <span>Fatigue</span>
           <strong id="fatigueValue">--</strong>
         </div>
-        <div class="track">
-          <div id="fatigueBar" class="fill fatigue"></div>
+        <div class="chart-frame">
+          <svg id="fatigueChart" class="line-chart fatigue" viewBox="0 0 240 64" preserveAspectRatio="none" role="img" aria-label="fatigue over time">
+            <path class="chart-grid" d="M0 16H240M0 32H240M0 48H240"></path>
+            <path id="fatigueLine" class="chart-line"></path>
+            <circle id="fatigueDot" class="chart-dot" r="3"></circle>
+          </svg>
         </div>
       </section>
 

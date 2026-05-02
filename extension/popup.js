@@ -3,8 +3,15 @@ const STORAGE_KEYS = {
   sample: "latestSample",
   status: "connectionStatus",
   flowLog: "flowLog",
+  metricLog: "metricLog",
   wsUrl: "wsUrl"
 };
+
+const CHART_W = 240;
+const CHART_H = 64;
+const CHART_PAD_X = 5;
+const CHART_PAD_Y = 5;
+const CHART_VISIBLE_COUNT = 90;
 
 const els = {
   statusText: document.getElementById("statusText"),
@@ -14,8 +21,10 @@ const els = {
   endpointMessage: document.getElementById("endpointMessage"),
   focusValue: document.getElementById("focusValue"),
   fatigueValue: document.getElementById("fatigueValue"),
-  focusBar: document.getElementById("focusBar"),
-  fatigueBar: document.getElementById("fatigueBar"),
+  focusLine: document.getElementById("focusLine"),
+  focusDot: document.getElementById("focusDot"),
+  fatigueLine: document.getElementById("fatigueLine"),
+  fatigueDot: document.getElementById("fatigueDot"),
   flowState: document.getElementById("flowState"),
   flowHeatmap: document.getElementById("flowHeatmap"),
   eegDot: document.getElementById("eegDot"),
@@ -27,6 +36,7 @@ let latestSample = null;
 let connectionStatus = null;
 let configuredWsUrl = DEFAULT_WS_URL;
 let flowLog = [];
+let metricLog = [];
 
 function clamp01(value) {
   if (typeof value !== "number" || Number.isNaN(value)) {
@@ -35,14 +45,100 @@ function clamp01(value) {
   return Math.min(1, Math.max(0, value));
 }
 
-function setBar(valueEl, barEl, value, disabled) {
+function setMetricValue(valueEl, value, disabled) {
   const bounded = disabled ? null : clamp01(value);
   valueEl.textContent = bounded === null ? "--" : String(Math.round(bounded * 100));
-  barEl.style.width = `${Math.round((bounded ?? 0) * 100)}%`;
 }
 
 function setDot(el, active) {
   el.classList.toggle("active", Boolean(active));
+}
+
+function entryTime(entry) {
+  if (typeof entry?.loggedAt === "number") {
+    return entry.loggedAt;
+  }
+  if (typeof entry?.ts === "number") {
+    return entry.ts * 1000;
+  }
+  return null;
+}
+
+function chartEntries(sample, live) {
+  const entries = Array.isArray(metricLog) ? metricLog.slice(-CHART_VISIBLE_COUNT) : [];
+  const focus = clamp01(sample?.focus);
+  const fatigue = clamp01(sample?.fatigue);
+
+  if (live && (focus !== null || fatigue !== null)) {
+    const loggedAt = Date.now();
+    const latest = entries.at(-1);
+    const latestTime = entryTime(latest);
+    const currentEntry = {
+      ts: typeof sample?.ts === "number" ? sample.ts : loggedAt / 1000,
+      loggedAt,
+      state: "live",
+      focus,
+      fatigue
+    };
+
+    if (latestTime !== null && Math.abs(loggedAt - latestTime) < 500 && entries.length > 0) {
+      entries[entries.length - 1] = currentEntry;
+    } else {
+      entries.push(currentEntry);
+    }
+  }
+
+  return entries.slice(-CHART_VISIBLE_COUNT);
+}
+
+function chartPoint(entry, key, startTime, endTime) {
+  const value = clamp01(entry?.[key]);
+  const time = entryTime(entry);
+
+  if (value === null || time === null) {
+    return null;
+  }
+
+  const range = Math.max(1, endTime - startTime);
+  const x = CHART_PAD_X + ((time - startTime) / range) * (CHART_W - CHART_PAD_X * 2);
+  const y = CHART_PAD_Y + (1 - value) * (CHART_H - CHART_PAD_Y * 2);
+  return { x, y };
+}
+
+function renderLineChart(lineEl, dotEl, entries, key) {
+  const times = entries.map(entryTime).filter((time) => time !== null);
+  const startTime = times[0] ?? 0;
+  const endTime = times.at(-1) ?? startTime + 1;
+  let path = "";
+  let drawing = false;
+  let lastPoint = null;
+
+  for (const entry of entries) {
+    const point = chartPoint(entry, key, startTime, endTime);
+    if (!point) {
+      drawing = false;
+      continue;
+    }
+
+    path += `${drawing ? "L" : "M"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
+    drawing = true;
+    lastPoint = point;
+  }
+
+  lineEl.setAttribute("d", path);
+  if (lastPoint) {
+    dotEl.setAttribute("cx", lastPoint.x.toFixed(1));
+    dotEl.setAttribute("cy", lastPoint.y.toFixed(1));
+    dotEl.style.display = "block";
+  } else {
+    dotEl.style.display = "none";
+  }
+}
+
+function renderMetricCharts(sample, live) {
+  const entries = chartEntries(sample, live);
+  renderLineChart(els.focusLine, els.focusDot, entries, "focus");
+  renderLineChart(els.fatigueLine, els.fatigueDot, entries, "fatigue");
 }
 
 function classifyFlow(sample, status) {
@@ -177,8 +273,9 @@ function render() {
 
   els.statusText.textContent = statusText(sample, connectionStatus);
   els.calibratingLabel.hidden = !calibrating;
-  setBar(els.focusValue, els.focusBar, sample?.focus, !live);
-  setBar(els.fatigueValue, els.fatigueBar, sample?.fatigue, !live);
+  setMetricValue(els.focusValue, sample?.focus, !live);
+  setMetricValue(els.fatigueValue, sample?.fatigue, !live);
+  renderMetricCharts(sample, live);
   setDot(els.eegDot, connected && sample?.sources?.eeg);
   setDot(els.ecgDot, connected && sample?.sources?.ecg);
   setDot(els.emgDot, connected && sample?.sources?.emg);
@@ -188,10 +285,11 @@ function render() {
   renderHeatmap();
 }
 
-chrome.storage.session.get([STORAGE_KEYS.sample, STORAGE_KEYS.status, STORAGE_KEYS.flowLog], (items) => {
+chrome.storage.session.get([STORAGE_KEYS.sample, STORAGE_KEYS.status, STORAGE_KEYS.flowLog, STORAGE_KEYS.metricLog], (items) => {
   latestSample = items[STORAGE_KEYS.sample] ?? null;
   connectionStatus = items[STORAGE_KEYS.status] ?? null;
   flowLog = Array.isArray(items[STORAGE_KEYS.flowLog]) ? items[STORAGE_KEYS.flowLog] : [];
+  metricLog = Array.isArray(items[STORAGE_KEYS.metricLog]) ? items[STORAGE_KEYS.metricLog] : [];
   render();
 });
 
@@ -219,6 +317,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     }
     if (changes[STORAGE_KEYS.flowLog]) {
       flowLog = Array.isArray(changes[STORAGE_KEYS.flowLog].newValue) ? changes[STORAGE_KEYS.flowLog].newValue : [];
+    }
+    if (changes[STORAGE_KEYS.metricLog]) {
+      metricLog = Array.isArray(changes[STORAGE_KEYS.metricLog].newValue) ? changes[STORAGE_KEYS.metricLog].newValue : [];
     }
   }
   render();
