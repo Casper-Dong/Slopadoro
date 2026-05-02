@@ -103,7 +103,7 @@ HTML = """<!doctype html>
         `sources: EEG=${frame.sources.eeg} ECG=${frame.sources.ecg} EMG=${frame.sources.emg}`,
         `bad channels: ${(frame.validity.bad_channels || []).join(', ') || 'none'}`,
         `artifact fraction: ${Number(frame.validity.artifact_fraction || 0).toFixed(3)}`,
-        `emg mode: ${frame.emg?.mode || 'feature amplitude'} L=${Number(frame.emg?.left_ratio || 0).toFixed(2)}x R=${Number(frame.emg?.right_ratio || 0).toFixed(2)}x`,
+        `emg mode: ${frame.emg?.mode || 'feature amplitude'} L=${Number(frame.emg?.left || 0).toFixed(0)} R=${Number(frame.emg?.right || 0).toFixed(0)} range L=${Number(frame.emg?.left_range_uv || 0).toFixed(0)}uV R=${Number(frame.emg?.right_range_uv || 0).toFixed(0)}uV`,
         `score reason: ${frame.reason}`
       ].join('\\n');
       draw();
@@ -523,13 +523,46 @@ def _channel_derivative_score(
     recent_level = _percentile(recent, 95.0) if recent else 0.0
     ratio = recent_level / max(noise, 1e-9)
     denominator = max(args.emg_derivative_ratio_full_scale - args.emg_derivative_ratio_threshold, 1e-9)
-    score = clamp(((ratio - args.emg_derivative_ratio_threshold) / denominator) * 100.0, 0.0, 100.0)
+    derivative_score = clamp(((ratio - args.emg_derivative_ratio_threshold) / denominator) * 100.0, 0.0, 100.0)
+
+    motion_cutoff = end_timestamp - args.emg_motion_recent_seconds
+    recent_values = [value for ts, value in values if ts >= motion_cutoff]
+    baseline_values = [value for ts, value in values if ts < motion_cutoff]
+    if len(recent_values) < 3:
+        recent_values = [value for _ts, value in values]
+    if len(baseline_values) < args.emg_derivative_min_baseline_points:
+        baseline_values = [value for _ts, value in values]
+
+    recent_range = _percentile(recent_values, 95.0) - _percentile(recent_values, 5.0)
+    baseline_range = _percentile(baseline_values, 95.0) - _percentile(baseline_values, 5.0)
+    range_noise = max(args.emg_motion_range_floor_uv, baseline_range)
+    range_ratio = recent_range / max(range_noise, 1e-9)
+    range_ratio_denominator = max(args.emg_motion_ratio_full_scale - args.emg_motion_ratio_threshold, 1e-9)
+    range_ratio_score = clamp(
+        ((range_ratio - args.emg_motion_ratio_threshold) / range_ratio_denominator) * 100.0,
+        0.0,
+        100.0,
+    )
+    range_denominator = max(args.emg_motion_range_full_scale_uv - args.emg_motion_range_threshold_uv, 1e-9)
+    range_absolute_score = clamp(
+        ((recent_range - args.emg_motion_range_threshold_uv) / range_denominator) * 100.0,
+        0.0,
+        100.0,
+    )
+    motion_score = max(range_ratio_score, range_absolute_score)
+    score = max(derivative_score, motion_score)
     return {
         "available": True,
         "score": score,
-        "ratio": ratio,
+        "ratio": max(ratio, range_ratio),
+        "derivative_ratio": ratio,
+        "range_ratio": range_ratio,
         "recent": recent_level,
         "noise": noise,
+        "range_uv": recent_range,
+        "range_noise_uv": range_noise,
+        "derivative_score": derivative_score,
+        "motion_score": motion_score,
     }
 
 
@@ -561,10 +594,18 @@ def emg_derivative_strain(args: argparse.Namespace, state: LiveState) -> dict[st
         "right": right,
         "left_ratio": float(channel_scores[0].get("ratio", 0.0)) if len(channel_scores) > 0 else 0.0,
         "right_ratio": float(channel_scores[1].get("ratio", 0.0)) if len(channel_scores) > 1 else 0.0,
+        "left_derivative_ratio": float(channel_scores[0].get("derivative_ratio", 0.0)) if len(channel_scores) > 0 else 0.0,
+        "right_derivative_ratio": float(channel_scores[1].get("derivative_ratio", 0.0)) if len(channel_scores) > 1 else 0.0,
+        "left_range_ratio": float(channel_scores[0].get("range_ratio", 0.0)) if len(channel_scores) > 0 else 0.0,
+        "right_range_ratio": float(channel_scores[1].get("range_ratio", 0.0)) if len(channel_scores) > 1 else 0.0,
         "left_recent_uv_per_s": float(channel_scores[0].get("recent", 0.0)) if len(channel_scores) > 0 else 0.0,
         "right_recent_uv_per_s": float(channel_scores[1].get("recent", 0.0)) if len(channel_scores) > 1 else 0.0,
         "left_noise_uv_per_s": float(channel_scores[0].get("noise", 0.0)) if len(channel_scores) > 0 else 0.0,
         "right_noise_uv_per_s": float(channel_scores[1].get("noise", 0.0)) if len(channel_scores) > 1 else 0.0,
+        "left_range_uv": float(channel_scores[0].get("range_uv", 0.0)) if len(channel_scores) > 0 else 0.0,
+        "right_range_uv": float(channel_scores[1].get("range_uv", 0.0)) if len(channel_scores) > 1 else 0.0,
+        "left_range_noise_uv": float(channel_scores[0].get("range_noise_uv", 0.0)) if len(channel_scores) > 0 else 0.0,
+        "right_range_noise_uv": float(channel_scores[1].get("range_noise_uv", 0.0)) if len(channel_scores) > 1 else 0.0,
     }
 
 
@@ -581,10 +622,18 @@ def payload_with_live_emg_derivative(args: argparse.Namespace, state: LiveState)
                 "available": False,
                 "left_ratio": 0.0,
                 "right_ratio": 0.0,
+                "left_derivative_ratio": 0.0,
+                "right_derivative_ratio": 0.0,
+                "left_range_ratio": 0.0,
+                "right_range_ratio": 0.0,
                 "left_recent_uv_per_s": 0.0,
                 "right_recent_uv_per_s": 0.0,
                 "left_noise_uv_per_s": 0.0,
                 "right_noise_uv_per_s": 0.0,
+                "left_range_uv": 0.0,
+                "right_range_uv": 0.0,
+                "left_range_noise_uv": 0.0,
+                "right_range_noise_uv": 0.0,
             },
             args=args,
             emg_source=False,
@@ -621,7 +670,11 @@ def _override_emg_derivative_payload(
             "emg_right_derivative_strain_0_100": right,
             "emg_derivative_left_ratio": derivative["left_ratio"],
             "emg_derivative_right_ratio": derivative["right_ratio"],
-            "emg_strain_mode": "derivative_spike",
+            "emg_motion_left_range_uv": derivative["left_range_uv"],
+            "emg_motion_right_range_uv": derivative["right_range_uv"],
+            "emg_motion_left_range_ratio": derivative["left_range_ratio"],
+            "emg_motion_right_range_ratio": derivative["right_range_ratio"],
+            "emg_strain_mode": "derivative_or_motion",
             "score_state": current_state,
         }
     )
@@ -635,19 +688,27 @@ def _override_emg_derivative_payload(
     if dashboard.get("state") not in {"bad_signal", "waiting", "openbci_missing"}:
         dashboard["state"] = current_state
     reason = str(dashboard.get("reason") or "live")
-    if "emg_derivative_spike" not in reason:
-        reason = f"{reason}_emg_derivative_spike"
+    if "emg_derivative_or_motion" not in reason:
+        reason = f"{reason}_emg_derivative_or_motion"
     dashboard["reason"] = reason
     dashboard["emg"] = {
-        "mode": "derivative_spike",
+        "mode": "derivative_or_motion",
         "left": left,
         "right": right,
         "left_ratio": derivative["left_ratio"],
         "right_ratio": derivative["right_ratio"],
+        "left_derivative_ratio": derivative["left_derivative_ratio"],
+        "right_derivative_ratio": derivative["right_derivative_ratio"],
+        "left_range_ratio": derivative["left_range_ratio"],
+        "right_range_ratio": derivative["right_range_ratio"],
         "left_recent_uv_per_s": derivative["left_recent_uv_per_s"],
         "right_recent_uv_per_s": derivative["right_recent_uv_per_s"],
         "left_noise_uv_per_s": derivative["left_noise_uv_per_s"],
         "right_noise_uv_per_s": derivative["right_noise_uv_per_s"],
+        "left_range_uv": derivative["left_range_uv"],
+        "right_range_uv": derivative["right_range_uv"],
+        "left_range_noise_uv": derivative["left_range_noise_uv"],
+        "right_range_noise_uv": derivative["right_range_noise_uv"],
     }
     payload["dashboard"] = dashboard
     return payload
@@ -884,8 +945,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--emg-derivative-max-gap-seconds", default=0.2, type=float)
     parser.add_argument("--emg-derivative-min-baseline-points", default=20, type=int)
     parser.add_argument("--emg-derivative-noise-floor-uv-per-s", default=30000.0, type=float)
-    parser.add_argument("--emg-derivative-ratio-threshold", default=3.0, type=float)
-    parser.add_argument("--emg-derivative-ratio-full-scale", default=5.0, type=float)
+    parser.add_argument("--emg-derivative-ratio-threshold", default=1.35, type=float)
+    parser.add_argument("--emg-derivative-ratio-full-scale", default=2.75, type=float)
+    parser.add_argument("--emg-motion-recent-seconds", default=0.8, type=float)
+    parser.add_argument("--emg-motion-range-floor-uv", default=160.0, type=float)
+    parser.add_argument("--emg-motion-range-threshold-uv", default=220.0, type=float)
+    parser.add_argument("--emg-motion-range-full-scale-uv", default=700.0, type=float)
+    parser.add_argument("--emg-motion-ratio-threshold", default=1.25, type=float)
+    parser.add_argument("--emg-motion-ratio-full-scale", default=2.5, type=float)
     parser.add_argument("--emg-derivative-notice-threshold", default=70.0, type=float)
     parser.add_argument("--resolve-timeout", default=1.0, type=float)
     parser.add_argument("--resolve-retry-seconds", default=1.0, type=float)

@@ -105,22 +105,16 @@ function animationForQuality(nextQuality, nextFocus, nextFatigue) {
 
   const focusValue = clamp01(nextFocus) ?? 0.5;
   const fatigueValue = clamp01(nextFatigue) ?? 0.5;
-  if (q < 0.4) {
+  if (q <= 0.5) {
     return "alert_dash";
   }
-  if (q < 0.55) {
+  if (q < 0.6) {
     return "alert_walk";
   }
   if (q < 0.7) {
-    return fatigueValue >= 0.65 || focusValue < 0.4 ? "yawn_heavy" : "alert_step";
+    return fatigueValue >= 0.65 || focusValue < 0.4 ? "alert_walk" : "alert_step";
   }
-  if (q < 0.85) {
-    return fatigueValue >= 0.75 ? "yawn_light" : "attentive_idle";
-  }
-  if (q < 0.93) {
-    return "doze";
-  }
-  return "sleep";
+  return q >= 0.86 ? "sleep" : "doze";
 }
 
 function setAnimation(name, now) {

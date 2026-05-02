@@ -80,7 +80,11 @@ function sourceAvailability(rawSources, fallback = { eeg: false, ecg: false, emg
 
 function normalizeScoreFrame(raw) {
   const scores = raw?.scores;
-  if (!scores || typeof scores !== "object") {
+  if (
+    !scores
+    || typeof scores !== "object"
+    || (!("focus_score_0_100" in scores) && !("fatigue_drift_score_0_100" in scores))
+  ) {
     return null;
   }
 
