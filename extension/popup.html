@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fatigue Cat</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <h1>Fatigue Cat</h1>
+        <p id="statusText">Connecting</p>
+      </header>
+
+      <p id="calibratingLabel" class="calibrating" hidden>Calibrating...</p>
+
+      <form id="endpointForm" class="endpoint">
+        <label for="wsUrlInput">Stream URL</label>
+        <div class="endpoint-row">
+          <input id="wsUrlInput" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="ws://localhost:8765/">
+          <button type="submit">Save</button>
+        </div>
+        <p id="endpointMessage" aria-live="polite"></p>
+      </form>
+
+      <section class="metric">
+        <div class="metric-row">
+          <span>Focus</span>
+          <strong id="focusValue">--</strong>
+        </div>
+        <div class="track">
+          <div id="focusBar" class="fill focus"></div>
+        </div>
+      </section>
+
+      <section class="metric">
+        <div class="metric-row">
+          <span>Fatigue</span>
+          <strong id="fatigueValue">--</strong>
+        </div>
+        <div class="track">
+          <div id="fatigueBar" class="fill fatigue"></div>
+        </div>
+      </section>
+
+      <section class="sources" aria-label="sources">
+        <span><i id="eegDot"></i>EEG</span>
+        <span><i id="ecgDot"></i>ECG</span>
+        <span><i id="emgDot"></i>EMG</span>
+      </section>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
