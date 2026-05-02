@@ -84,6 +84,3 @@ python3 tools/mock_ws.py --host 0.0.0.0 --scenario sleepy
 
 The frozen WebSocket contract is documented in [docs/websocket-contract.md](docs/websocket-contract.md).
 
-## Commit Policy
-
-Use plain commit messages. Do not add a `Co-Authored-By: Claude` trailer.
