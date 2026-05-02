@@ -20,6 +20,28 @@ const colors = {
   rmssd: "#86efac"
 };
 
+const eegLayout = {
+  FP1: [-0.34, -0.86],
+  FP2: [0.34, -0.86],
+  F7: [-0.76, -0.48],
+  F3: [-0.38, -0.42],
+  FZ: [0, -0.46],
+  F4: [0.38, -0.42],
+  F8: [0.76, -0.48],
+  T7: [-0.9, 0],
+  C3: [-0.42, 0],
+  CZ: [0, 0],
+  C4: [0.42, 0],
+  T8: [0.9, 0],
+  P7: [-0.76, 0.48],
+  P3: [-0.38, 0.42],
+  PZ: [0, 0.46],
+  P4: [0.38, 0.42],
+  P8: [0.76, 0.48],
+  O1: [-0.34, 0.86],
+  O2: [0.34, 0.86]
+};
+
 const $ = (id) => document.getElementById(id);
 
 function clamp(value, low, high) {
@@ -263,6 +285,82 @@ function span(values) {
   return finite[Math.floor(finite.length * 0.95)] - finite[Math.floor(finite.length * 0.05)];
 }
 
+function mean(values) {
+  const finite = values.filter(Number.isFinite);
+  if (!finite.length) {
+    return 0;
+  }
+  return finite.reduce((total, value) => total + value, 0) / finite.length;
+}
+
+function canonicalEegLabel(label) {
+  const normalized = String(label || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const alias = {
+    FPZ: "FPZ",
+    FZ: "FZ",
+    CZ: "CZ",
+    PZ: "PZ"
+  };
+  return alias[normalized] || normalized;
+}
+
+function fallbackEegPosition(index, total) {
+  const angle = -Math.PI / 2 + (index / Math.max(1, total)) * Math.PI * 2;
+  return [Math.cos(angle) * 0.78, Math.sin(angle) * 0.78];
+}
+
+function channelRms(channel) {
+  const values = channel.map(Number).filter(Number.isFinite);
+  if (values.length < 4) {
+    return 0;
+  }
+  const center = median(values);
+  const squared = values.map((value) => (value - center) ** 2);
+  return Math.sqrt(mean(squared));
+}
+
+function heatRgb(value) {
+  const stops = [
+    [0.0, [37, 99, 235]],
+    [0.45, [20, 184, 166]],
+    [0.7, [250, 204, 21]],
+    [1.0, [248, 113, 113]]
+  ];
+  const v = clamp(value, 0, 1);
+  for (let i = 1; i < stops.length; i += 1) {
+    const [stop, color] = stops[i];
+    const [prevStop, prevColor] = stops[i - 1];
+    if (v <= stop) {
+      const t = (v - prevStop) / Math.max(0.001, stop - prevStop);
+      const mixed = color.map((channel, idx) => Math.round(prevColor[idx] + (channel - prevColor[idx]) * t));
+      return `rgb(${mixed[0]}, ${mixed[1]}, ${mixed[2]})`;
+    }
+  }
+  return "rgb(248, 113, 113)";
+}
+
+function eegElectrodes(raw) {
+  if (!raw || !Array.isArray(raw.channels) || !raw.channels.length) {
+    return [];
+  }
+  const labels = raw.labels || [];
+  const powers = raw.channels.map((channel) => Math.log10(channelRms(channel) + 1));
+  const center = median(powers);
+  const spread = Math.max(0.08, span(powers));
+  return powers.map((power, idx) => {
+    const label = labels[idx] || `Ch${idx + 1}`;
+    const key = canonicalEegLabel(label);
+    const position = eegLayout[key] || fallbackEegPosition(idx, powers.length);
+    return {
+      label,
+      x: position[0],
+      y: position[1],
+      value: clamp(0.5 + ((power - center) / spread) * 0.75, 0, 1),
+      rms: 10 ** power - 1
+    };
+  });
+}
+
 function prepCanvas(id) {
   const canvas = $(id);
   const dpr = window.devicePixelRatio || 1;
@@ -319,6 +417,99 @@ function drawLineChart(id, series, yMin, yMax) {
     ctx.fillStyle = spec.color;
     ctx.fillText(spec.name, w - 92, 18 + specIndex * 16);
   });
+}
+
+function drawBrainMap(id, raw) {
+  const { ctx, w, h } = prepCanvas(id);
+  const electrodes = eegElectrodes(raw);
+  if (!electrodes.length) {
+    ctx.fillStyle = "#8a8a8a";
+    ctx.fillText("waiting for raw EEG", 16, 24);
+    return;
+  }
+
+  const cx = w * 0.5;
+  const cy = h * 0.51;
+  const radius = Math.max(42, Math.min(w * 0.34, h * 0.38));
+  const step = Math.max(3, Math.round(Math.min(w, h) / 95));
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.clip();
+
+  for (let y = cy - radius; y <= cy + radius; y += step) {
+    for (let x = cx - radius; x <= cx + radius; x += step) {
+      const dx = (x - cx) / radius;
+      const dy = (y - cy) / radius;
+      if (dx * dx + dy * dy > 1) {
+        continue;
+      }
+      let weighted = 0;
+      let weightSum = 0;
+      electrodes.forEach((electrode) => {
+        const dist2 = (dx - electrode.x) ** 2 + (dy - electrode.y) ** 2;
+        const weight = 1 / Math.max(0.02, dist2 ** 1.35);
+        weighted += electrode.value * weight;
+        weightSum += weight;
+      });
+      const value = weightSum > 0 ? weighted / weightSum : 0.5;
+      ctx.fillStyle = heatRgb(value);
+      ctx.globalAlpha = 0.86;
+      ctx.fillRect(x, y, step + 0.5, step + 0.5);
+    }
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+
+  ctx.strokeStyle = "#d4d4d4";
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx - radius * 0.12, cy - radius * 0.98);
+  ctx.lineTo(cx, cy - radius * 1.12);
+  ctx.lineTo(cx + radius * 0.12, cy - radius * 0.98);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(cx - radius * 1.05, cy, radius * 0.08, radius * 0.18, 0, Math.PI * 0.5, Math.PI * 1.5);
+  ctx.ellipse(cx + radius * 1.05, cy, radius * 0.08, radius * 0.18, 0, Math.PI * 1.5, Math.PI * 0.5);
+  ctx.stroke();
+
+  ctx.font = "10px Inter, Segoe UI, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  electrodes.forEach((electrode) => {
+    const x = cx + electrode.x * radius;
+    const y = cy + electrode.y * radius;
+    ctx.fillStyle = "#0f0f0f";
+    ctx.strokeStyle = heatRgb(electrode.value);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#f2f2f2";
+    ctx.fillText(electrode.label, x, y - 13);
+  });
+
+  const legendX = Math.max(12, w - 138);
+  const legendY = h - 24;
+  const gradient = ctx.createLinearGradient(legendX, legendY, legendX + 92, legendY);
+  gradient.addColorStop(0, heatRgb(0));
+  gradient.addColorStop(0.45, heatRgb(0.45));
+  gradient.addColorStop(0.7, heatRgb(0.7));
+  gradient.addColorStop(1, heatRgb(1));
+  ctx.fillStyle = gradient;
+  ctx.fillRect(legendX, legendY, 92, 8);
+  ctx.strokeStyle = "#4a4a4a";
+  ctx.strokeRect(legendX, legendY, 92, 8);
+  ctx.fillStyle = "#a7a7a7";
+  ctx.textAlign = "right";
+  ctx.fillText("low", legendX - 5, legendY + 4);
+  ctx.textAlign = "left";
+  ctx.fillText("high", legendX + 97, legendY + 4);
 }
 
 function drawRawStacked(id, raw) {
@@ -392,6 +583,7 @@ function draw() {
     { name: "alpha", color: colors.alpha, get: (frame) => frame.eeg_bands.alpha },
     { name: "beta", color: colors.beta, get: (frame) => frame.eeg_bands.beta }
   ], 0, 100);
+  drawBrainMap("brainMap", latestFrame?.raw?.eeg);
   drawLineChart("emg", [
     { name: "left", color: colors.left, get: (frame) => frame.emg.left },
     { name: "right", color: colors.right, get: (frame) => frame.emg.right },

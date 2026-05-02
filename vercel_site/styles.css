@@ -143,6 +143,10 @@ canvas {
   background: #0f0f0f;
 }
 
+canvas.brain-map {
+  height: 300px;
+}
+
 .detail {
   margin-top: 12px;
   color: #a7a7a7;
