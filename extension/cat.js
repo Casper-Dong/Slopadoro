@@ -20,27 +20,29 @@ const ANIMATIONS = {
   sleep: { row: 6, frames: 4, fps: 2, moving: false, corner: true }
 };
 
+const RANDOM_MOVES = [
+  { name: "alert_dash", minMs: 1000, maxMs: 2400, minSpeed: 0.9, maxSpeed: 1.45, turnChance: 0.28 },
+  { name: "alert_walk", minMs: 1800, maxMs: 4200, minSpeed: 0.8, maxSpeed: 1.35, turnChance: 0.42 },
+  { name: "alert_step", minMs: 1300, maxMs: 3400, minSpeed: 0.7, maxSpeed: 1.25, turnChance: 0.48 },
+  { name: "attentive_idle", minMs: 1200, maxMs: 3000, minSpeed: 0.65, maxSpeed: 1.3, turnChance: 0.54 },
+  { name: "soft_idle", minMs: 900, maxMs: 2200, minSpeed: 0.5, maxSpeed: 1.2, turnChance: 0.5 },
+  { name: "tired_idle", minMs: 900, maxMs: 1800, minSpeed: 0.75, maxSpeed: 1.4, turnChance: 0.6 },
+  { name: "yawn_light", minMs: 700, maxMs: 1500, minSpeed: 0, maxSpeed: 0, turnChance: 0.72 },
+  { name: "yawn_heavy", minMs: 700, maxMs: 1400, minSpeed: 0, maxSpeed: 0, turnChance: 0.72 }
+];
+
 let host = null;
 let x = 24;
 let direction = 1;
 let frame = 0;
 let activeName = null;
 let visible = false;
-let focus = 0.5;
-let fatigue = null;
-let quality = null;
-let calibrating = true;
-let sources = { eeg: false, ecg: false, emg: false };
 let lastFrameAt = 0;
 let lastMoveAt = 0;
 let jumpOffset = 0;
-
-function clamp01(value) {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    return null;
-  }
-  return Math.min(1, Math.max(0, value));
-}
+let nextMoveAt = 0;
+let speedScale = 1;
+let jumpScale = 1;
 
 function ensureHost() {
   if (host || document.getElementById("slopadoro-fatigue-cat")) {
@@ -67,54 +69,20 @@ function ensureHost() {
   document.documentElement.appendChild(host);
 }
 
-function animationFor(nextFocus, nextFatigue) {
-  const f = clamp01(nextFatigue);
-  const focusValue = clamp01(nextFocus) ?? 0.5;
-  if (f === null) {
-    return null;
-  }
-
-  if (focusValue >= 0.72 && f < 0.5) {
-    return f < 0.28 ? "sleep" : "doze";
-  }
-
-  if (f >= 0.75 || focusValue < 0.22) {
-    return "alert_dash";
-  }
-
-  if (f >= 0.6 || focusValue < 0.36) {
-    return focusValue >= 0.45 ? "yawn_light" : "yawn_heavy";
-  }
-
-  if (focusValue >= 0.58) {
-    return f < 0.35 ? "attentive_idle" : "soft_idle";
-  }
-
-  if (focusValue >= 0.42) {
-    return f < 0.42 ? "alert_step" : "alert_walk";
-  }
-
-  return "tired_idle";
+function randomBetween(min, max) {
+  return min + Math.random() * (max - min);
 }
 
-function animationForQuality(nextQuality, nextFocus, nextFatigue) {
-  const q = clamp01(nextQuality);
-  if (q === null) {
-    return animationFor(nextFocus, nextFatigue);
-  }
+function chooseRandomMove(now) {
+  const move = RANDOM_MOVES[Math.floor(Math.random() * RANDOM_MOVES.length)];
+  speedScale = randomBetween(move.minSpeed, move.maxSpeed);
+  jumpScale = randomBetween(0.75, 1.45);
+  nextMoveAt = now + randomBetween(move.minMs, move.maxMs);
 
-  const focusValue = clamp01(nextFocus) ?? 0.5;
-  const fatigueValue = clamp01(nextFatigue) ?? 0.5;
-  if (q <= 0.5) {
-    return "alert_dash";
+  if (Math.random() < move.turnChance) {
+    direction *= -1;
   }
-  if (q < 0.6) {
-    return "alert_walk";
-  }
-  if (q < 0.7) {
-    return fatigueValue >= 0.65 || focusValue < 0.4 ? "alert_walk" : "alert_step";
-  }
-  return q >= 0.86 ? "sleep" : "doze";
+  setAnimation(move.name, now);
 }
 
 function setAnimation(name, now) {
@@ -159,14 +127,9 @@ function updatePosition() {
 function tick(now) {
   ensureHost();
 
-  const waitingForStream = calibrating || (quality === null && fatigue === null);
-  const headsetMissing = sources.eeg === false;
-  const nextAnimation = waitingForStream || headsetMissing ? "sleep" : animationForQuality(quality, focus, fatigue);
-  setAnimation(nextAnimation, now);
-  host.dataset.animation = nextAnimation ?? "";
-  host.dataset.quality = quality === null ? "" : String(Math.round(quality * 100));
-  host.dataset.focus = String(Math.round((clamp01(focus) ?? 0) * 100));
-  host.dataset.fatigue = fatigue === null ? "" : String(Math.round(fatigue * 100));
+  if (!activeName || now >= nextMoveAt) {
+    chooseRandomMove(now);
+  }
 
   if (visible && activeName) {
     const animation = ANIMATIONS[activeName];
@@ -184,8 +147,8 @@ function tick(now) {
 
     if (animation.moving) {
       const dt = lastMoveAt ? Math.min(0.08, (now - lastMoveAt) / 1000) : 0;
-      x += direction * animation.speed * dt;
-      jumpOffset = animation.jump ? Math.abs(Math.sin(now / 115)) * animation.jump : 0;
+      x += direction * animation.speed * speedScale * dt;
+      jumpOffset = animation.jump ? Math.abs(Math.sin(now / 115)) * animation.jump * jumpScale : 0;
       const maxX = Math.max(0, window.innerWidth - DISPLAY_W);
       if (x <= 0) {
         x = 0;
@@ -204,18 +167,8 @@ function tick(now) {
   requestAnimationFrame(tick);
 }
 
-function applyFatigueMessage(message) {
-  focus = clamp01(message.focus) ?? focus;
-  fatigue = clamp01(message.value);
-  quality = clamp01(message.quality);
-  calibrating = Boolean(message.calibrating);
-  if (message.sources && typeof message.sources === "object") {
-    sources = {
-      eeg: Boolean(message.sources.eeg),
-      ecg: Boolean(message.sources.ecg),
-      emg: Boolean(message.sources.emg)
-    };
-  }
+function applyFatigueMessage(_message) {
+  // Movement is intentionally playful and independent of the live BCI stream.
 }
 
 chrome.runtime.onMessage.addListener((message) => {

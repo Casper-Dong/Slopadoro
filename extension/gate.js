@@ -18,16 +18,15 @@ const GATE_KEYS = {
 const GATE_ROOT_ID = "slopadoro-distraction-gate-root";
 const GATE_STYLE_ID = "slopadoro-distraction-gate-style";
 const GATE_CLASS = "slopadoro-distraction-gate-active";
-const FATIGUE_GATE_THRESHOLD = 0.72;
-const FOCUS_GATE_THRESHOLD = 0.38;
+const GATE_POPUP_DELAY_MS = 4000;
 const CONFIRM_DELAY_SECONDS = 5;
 const SNOOZE_MS = 10 * 60 * 1000;
-const SAMPLE_FRESH_MS = 10000;
 
 let enabled = true;
 let blocklist = DEFAULT_GATE_BLOCKLIST;
 let latestSample = null;
 let connectionStatus = null;
+let gateDelayTimer = null;
 let countdownTimer = null;
 let dismissedUntilMs = 0;
 let lastPath = location.href;
@@ -62,36 +61,12 @@ function hostMatches() {
   return blocklist.some((entry) => host === entry || host.endsWith(`.${entry}`));
 }
 
-function isConnected() {
-  const state = connectionStatus?.state;
-  return state === "connected" || state === "calibrating";
-}
-
-function sampleIsFresh() {
-  if (typeof latestSample?.ts !== "number") {
-    return false;
-  }
-  return Math.abs(Date.now() - latestSample.ts * 1000) <= SAMPLE_FRESH_MS;
-}
-
 function shouldGate() {
   if (!enabled || !hostMatches() || Date.now() < dismissedUntilMs) {
     return false;
   }
-  if (latestSample?.calibrating || latestSample?.sources?.eeg === false) {
-    return false;
-  }
 
-  const focus = clamp01(latestSample?.focus);
-  const fatigue = clamp01(latestSample?.fatigue);
-  if (focus === null || fatigue === null) {
-    return false;
-  }
-  if (!isConnected() && !sampleIsFresh()) {
-    return false;
-  }
-
-  return fatigue >= FATIGUE_GATE_THRESHOLD || focus <= FOCUS_GATE_THRESHOLD;
+  return true;
 }
 
 function injectStyle() {
@@ -166,6 +141,10 @@ function injectStyle() {
 function removeGate() {
   document.documentElement.classList.remove(GATE_CLASS);
   document.getElementById(GATE_ROOT_ID)?.remove();
+  if (gateDelayTimer !== null) {
+    clearTimeout(gateDelayTimer);
+    gateDelayTimer = null;
+  }
   if (countdownTimer !== null) {
     clearInterval(countdownTimer);
     countdownTimer = null;
@@ -192,8 +171,8 @@ function showGate() {
   root.id = GATE_ROOT_ID;
   root.innerHTML = `
     <section class="slopadoro-gate-dialog" role="dialog" aria-modal="true" aria-labelledby="slopadoro-gate-title">
-      <h2 id="slopadoro-gate-title">Tabbi sees your focus drifting</h2>
-      <p>This page is on your distraction list, and your focus or fatigue signal says to pause. Take five seconds before continuing.</p>
+      <h2 id="slopadoro-gate-title">Tabbi opened the distraction gate</h2>
+      <p>This page is on your distraction list. Take five seconds before continuing.</p>
       <div class="slopadoro-gate-actions">
         <button type="button" class="slopadoro-gate-secondary">Leave</button>
         <button type="button" class="slopadoro-gate-primary" disabled>Continue in ${CONFIRM_DELAY_SECONDS}</button>
@@ -228,14 +207,31 @@ function showGate() {
   document.documentElement.appendChild(root);
 }
 
+function scheduleGate() {
+  if (document.getElementById(GATE_ROOT_ID) || gateDelayTimer !== null) {
+    return;
+  }
+
+  gateDelayTimer = setTimeout(() => {
+    gateDelayTimer = null;
+    if (shouldGate()) {
+      showGate();
+    }
+  }, GATE_POPUP_DELAY_MS);
+}
+
 function evaluateGate() {
   if (lastPath !== location.href) {
     lastPath = location.href;
     dismissedUntilMs = 0;
+    if (gateDelayTimer !== null) {
+      clearTimeout(gateDelayTimer);
+      gateDelayTimer = null;
+    }
   }
 
   if (shouldGate()) {
-    showGate();
+    scheduleGate();
   } else {
     removeGate();
   }
