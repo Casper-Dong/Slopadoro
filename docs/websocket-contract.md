@@ -34,6 +34,8 @@ Fields:
 - `subscores`: Optional diagnostic values for the popup debug view. Sensor-derived values should become `null` when their source is unavailable.
 - `sources`: Current source availability for `eeg`, `ecg`, and `emg`.
 
+The extension uses `subscores.signal_quality_score_0_100` as the primary value for the badge and on-page cat animation when it is present. `focus` and `fatigue` are still used by the popup charts, the distraction gate, focus-test logging, and as fallback cat inputs for older streams.
+
 In `tools/hackathon_live_bridge.py`, `emg_strain_score_0_100` is a quick-derivative spike score from the two raw posture EMG channels. `emg_derivative_left_ratio` and `emg_derivative_right_ratio` report recent derivative magnitude relative to the local derivative noise floor; steady EMG amplitude alone should not raise strain.
 
 If one sensor drops, its `sources.*` value becomes `false`. Fused `focus` and `fatigue` should still be emitted using available modalities with weights renormalized by the producer.

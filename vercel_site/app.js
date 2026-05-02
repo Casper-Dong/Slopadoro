@@ -276,7 +276,10 @@ function prepCanvas(id) {
 
 function drawLineChart(id, series, yMin, yMax) {
   const { ctx, w, h } = prepCanvas(id);
-  const pad = 24;
+  const pad = 28;
+  ctx.font = "11px Inter, Segoe UI, sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
   ctx.strokeStyle = "#333333";
   ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i += 1) {
@@ -285,7 +288,11 @@ function drawLineChart(id, series, yMin, yMax) {
     ctx.moveTo(pad, y);
     ctx.lineTo(w - 8, y);
     ctx.stroke();
+    ctx.fillStyle = "#8a8a8a";
+    ctx.fillText(String(Math.round(yMax - (i / 4) * (yMax - yMin))), pad - 7, y);
   }
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
 
   series.forEach((spec, specIndex) => {
     ctx.strokeStyle = spec.color;

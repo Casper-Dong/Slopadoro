@@ -28,6 +28,7 @@ let activeName = null;
 let visible = false;
 let focus = 0.5;
 let fatigue = null;
+let quality = null;
 let calibrating = true;
 let sources = { eeg: false, ecg: false, emg: false };
 let lastFrameAt = 0;
@@ -96,6 +97,32 @@ function animationFor(nextFocus, nextFatigue) {
   return "tired_idle";
 }
 
+function animationForQuality(nextQuality, nextFocus, nextFatigue) {
+  const q = clamp01(nextQuality);
+  if (q === null) {
+    return animationFor(nextFocus, nextFatigue);
+  }
+
+  const focusValue = clamp01(nextFocus) ?? 0.5;
+  const fatigueValue = clamp01(nextFatigue) ?? 0.5;
+  if (q < 0.4) {
+    return "alert_dash";
+  }
+  if (q < 0.55) {
+    return "alert_walk";
+  }
+  if (q < 0.7) {
+    return fatigueValue >= 0.65 || focusValue < 0.4 ? "yawn_heavy" : "alert_step";
+  }
+  if (q < 0.85) {
+    return fatigueValue >= 0.75 ? "yawn_light" : "attentive_idle";
+  }
+  if (q < 0.93) {
+    return "doze";
+  }
+  return "sleep";
+}
+
 function setAnimation(name, now) {
   if (activeName === name) {
     return;
@@ -138,10 +165,14 @@ function updatePosition() {
 function tick(now) {
   ensureHost();
 
-  const waitingForStream = calibrating || fatigue === null;
+  const waitingForStream = calibrating || (quality === null && fatigue === null);
   const headsetMissing = sources.eeg === false;
-  const nextAnimation = waitingForStream || headsetMissing ? "sleep" : animationFor(focus, fatigue);
+  const nextAnimation = waitingForStream || headsetMissing ? "sleep" : animationForQuality(quality, focus, fatigue);
   setAnimation(nextAnimation, now);
+  host.dataset.animation = nextAnimation ?? "";
+  host.dataset.quality = quality === null ? "" : String(Math.round(quality * 100));
+  host.dataset.focus = String(Math.round((clamp01(focus) ?? 0) * 100));
+  host.dataset.fatigue = fatigue === null ? "" : String(Math.round(fatigue * 100));
 
   if (visible && activeName) {
     const animation = ANIMATIONS[activeName];
@@ -182,6 +213,7 @@ function tick(now) {
 function applyFatigueMessage(message) {
   focus = clamp01(message.focus) ?? focus;
   fatigue = clamp01(message.value);
+  quality = clamp01(message.quality);
   calibrating = Boolean(message.calibrating);
   if (message.sources && typeof message.sources === "object") {
     sources = {

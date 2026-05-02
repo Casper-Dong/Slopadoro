@@ -1,6 +1,6 @@
 # Monitor Your Flow State
 
-Chrome MV3 extension that shows a pixel cat along the bottom of normal web pages. The cat responds live to `focus` and `fatigue` samples from a WebSocket stream. It defaults to `ws://localhost:8765/`, and the popup can point it at another `ws://` or `wss://` endpoint.
+Chrome MV3 extension that shows a pixel cat along the bottom of normal web pages. The cat primarily responds to live `signal_quality_score_0_100`, with `focus` and `fatigue` as fallback/context values. It defaults to `ws://localhost:8765/`, and the popup can point it at another `ws://` or `wss://` endpoint.
 
 ## End-to-End Firmware Demo
 
@@ -108,11 +108,13 @@ grid: 8 columns x 10 rows
 row frame counts: 4, 4, 4, 4, 8, 8, 4, 6, 7, 8
 ```
 
-`cat.js` maps focus and fatigue to three visible moods:
+`cat.js` maps signal quality to the cat's visible state, with focus/fatigue used only as secondary context when quality is available:
 
-- Focused: high focus with low fatigue parks the cat sleeping/dozing in the bottom-right corner.
-- Drifting: medium focus or mild fatigue makes the cat wander slowly along the bottom edge.
-- Break needed: high fatigue or very low focus makes the cat run fast and jump while bouncing between window edges.
+- Very clean signal, roughly `93+`: the cat sleeps.
+- Clean signal, roughly `85-92`: the cat dozes.
+- Usable signal, roughly `70-84`: the cat idles or lightly yawns.
+- Marginal signal, roughly `40-69`: the cat steps, walks, or yawns heavily.
+- Bad signal, below roughly `40`: the cat dashes and jumps.
 
 ## Run the Mock Server
 
@@ -171,13 +173,13 @@ That bridge reads the firmware `Scores` frames, maps `focus_score_0_100` and `fa
 ## Behavior
 
 - Badge shows `...` while disconnected or calibrating.
-- Badge shows `0` to `99` from focus when live.
-- Badge color becomes redder as fatigue rises.
+- Badge shows `0` to `99` from signal quality when available, falling back to focus for older streams.
+- Badge color becomes redder as signal quality drops.
 - Before the headset/OpenBCI stream is available, the cat sleeps in the bottom-right corner.
 - During calibration or a disconnected WebSocket, the cat also stays asleep instead of disappearing.
-- High focus plus low fatigue makes the cat sleep in the corner.
-- Medium focus/fatigue makes the cat wander.
-- High fatigue or very low focus makes the cat jump and run around.
+- Very high signal quality makes the cat sleep in the corner.
+- Medium signal quality makes the cat idle, step, walk, or yawn.
+- Low signal quality makes the cat jump and run around.
 - The popup keeps bounded session-only metric and flow logs, rendering focus/fatigue as line charts and recent states as a heat map.
 - The adaptive distraction gate desaturates blocklisted sites and shows a 5-second confirmation modal only when fatigue is high or focus is low.
 - A notification fires after fatigue stays above `0.75` for 30 seconds, then enters a 5-minute cooldown.

@@ -115,14 +115,21 @@ HTML = """<!doctype html>
       canvas.height = Math.max(1, canvas.clientHeight * dpr);
       const ctx = canvas.getContext('2d');
       ctx.scale(dpr, dpr);
-      const w = canvas.clientWidth, h = canvas.clientHeight, pad = 24;
+      const w = canvas.clientWidth, h = canvas.clientHeight, pad = 28;
       ctx.clearRect(0, 0, w, h);
+      ctx.font = '11px Inter, Segoe UI, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
       ctx.strokeStyle = '#30363d';
       ctx.lineWidth = 1;
       for (let i = 0; i <= 4; i++) {
         const y = pad + (i / 4) * (h - pad * 2);
         ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - 8, y); ctx.stroke();
+        ctx.fillStyle = '#8b949e';
+        ctx.fillText(String(Math.round(yMax - (i / 4) * (yMax - yMin))), pad - 7, y);
       }
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
       for (const spec of series) {
         ctx.strokeStyle = spec.color;
         ctx.lineWidth = 2;

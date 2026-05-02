@@ -129,6 +129,10 @@ function normalizeSample(raw) {
   };
 }
 
+function sampleQuality(sample) {
+  return score01(sample?.subscores?.signal_quality_score_0_100);
+}
+
 function unavailableSample() {
   return {
     focus: null,
@@ -478,16 +482,34 @@ function badgeColor(fatigue) {
   return "#dc2626";
 }
 
+function qualityBadgeColor(quality) {
+  const value = clamp01(quality);
+  if (value === null) {
+    return "#6b7280";
+  }
+  if (value >= 0.75) {
+    return "#15803d";
+  }
+  if (value >= 0.5) {
+    return "#d97706";
+  }
+  return "#dc2626";
+}
+
 function setBadge(sample, state) {
   const connected = state === "connected" || state === "calibrating";
   const calibrating = state === "calibrating" || sample?.calibrating;
   const headsetReady = sample?.sources?.eeg !== false;
   const focus = clamp01(sample?.focus);
   const fatigue = clamp01(sample?.fatigue);
-  const live = connected && !calibrating && headsetReady && focus !== null;
-  const text = live ? String(Math.min(99, Math.round(focus * 100))) : "...";
+  const quality = sampleQuality(sample);
+  const primary = quality ?? focus;
+  const live = connected && !calibrating && headsetReady && primary !== null;
+  const text = live ? String(Math.min(99, Math.round(primary * 100))) : "...";
   let title = `Monitor your flow state: waiting for ${shortWsUrl()}`;
-  if (live) {
+  if (live && quality !== null) {
+    title = `Monitor your flow state: signal quality ${text}, focus ${Math.round((focus ?? 0) * 100)}, fatigue ${Math.round((fatigue ?? 0) * 100)}`;
+  } else if (live) {
     title = `Monitor your flow state: focus ${text}, fatigue ${Math.round((fatigue ?? 0) * 100)}`;
   } else if (connected && !headsetReady) {
     title = "Monitor your flow state: waiting for headset";
@@ -496,7 +518,7 @@ function setBadge(sample, state) {
   }
 
   chrome.action.setBadgeText({ text });
-  chrome.action.setBadgeBackgroundColor({ color: live ? badgeColor(fatigue) : "#6b7280" });
+  chrome.action.setBadgeBackgroundColor({ color: live ? (quality !== null ? qualityBadgeColor(quality) : badgeColor(fatigue)) : "#6b7280" });
   chrome.action.setTitle({ title });
 }
 
@@ -505,6 +527,7 @@ function broadcastFatigue(sample) {
     type: "fatigue",
     value: sample?.fatigue ?? null,
     focus: sample?.focus ?? null,
+    quality: sampleQuality(sample),
     calibrating: Boolean(sample?.calibrating),
     sources: sample?.sources ?? { eeg: false, ecg: false, emg: false }
   };
