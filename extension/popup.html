@@ -41,6 +41,32 @@
         <p id="gateSiteStatus" class="gate-status">Current site: --</p>
       </form>
 
+      <section class="test-panel">
+        <div class="test-heading">
+          <span>Focus test</span>
+          <strong id="focusTestStatus">Off</strong>
+        </div>
+        <form id="focusTestForm" class="test-form">
+          <label for="focusTestNameInput">Test</label>
+          <input id="focusTestNameInput" type="text" autocomplete="off" maxlength="60" placeholder="Writing block">
+          <label for="focusTestVariantInput">Variant</label>
+          <input id="focusTestVariantInput" type="text" autocomplete="off" maxlength="24" placeholder="A">
+          <label for="focusTestScopeInput">Track</label>
+          <select id="focusTestScopeInput">
+            <option value="current">Current site</option>
+            <option value="all">All sites</option>
+          </select>
+          <div class="test-actions">
+            <button id="startFocusTestButton" type="submit">Start</button>
+            <button id="stopFocusTestButton" type="button">Stop</button>
+            <button id="clearFocusTestsButton" type="button">Clear</button>
+            <button id="exportFocusTestsButton" type="button">Export CSV</button>
+          </div>
+          <p id="focusTestMessage" aria-live="polite"></p>
+        </form>
+        <div id="abResults" class="ab-results" aria-label="A/B focus test results"></div>
+      </section>
+
       <section class="metric">
         <div class="metric-row">
           <span>Focus</span>

@@ -6,7 +6,9 @@ const STORAGE_KEYS = {
   metricLog: "metricLog",
   gateEnabled: "gateEnabled",
   gateBlocklist: "gateBlocklist",
-  wsUrl: "wsUrl"
+  wsUrl: "wsUrl",
+  focusTestActive: "focusTestActive",
+  focusTestRuns: "focusTestRuns"
 };
 
 const DEFAULT_GATE_BLOCKLIST = [
@@ -30,6 +32,9 @@ const METRIC_LOG_INTERVAL_MS = 1000;
 const METRIC_LOG_MAX_ENTRIES = 300;
 const FLOW_LOG_INTERVAL_MS = 5000;
 const FLOW_LOG_MAX_ENTRIES = 360;
+const FOCUS_TEST_LOG_INTERVAL_MS = 1000;
+const FOCUS_TEST_HISTORY_LIMIT = 80;
+const ACTIVE_SITE_FRESH_MS = 45000;
 
 let socket = null;
 let reconnectDelayMs = RECONNECT_MIN_MS;
@@ -43,6 +48,9 @@ let lastMetricLogAtMs = 0;
 let lastMetricLogState = null;
 let lastFlowLogAtMs = 0;
 let lastFlowLogState = null;
+let activeSite = null;
+let activeFocusTest = null;
+let lastFocusTestLogAtMs = 0;
 
 if (chrome.storage.session.setAccessLevel) {
   chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" });
@@ -179,6 +187,24 @@ function roundedMetric(value) {
   return bounded === null ? null : Number(bounded.toFixed(3));
 }
 
+function normalizeHost(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    return new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`).hostname.replace(/^www\./, "");
+  } catch {
+    const host = trimmed.replace(/^(\*\.)?/, "").replace(/^www\./, "").replace(/\/.*$/, "");
+    return host || null;
+  }
+}
+
 function maybeLogMetrics(sample, connectionState) {
   const now = Date.now();
   const state = metricState(sample, connectionState);
@@ -261,6 +287,179 @@ function maybeLogFlow(sample, connectionState) {
   });
 }
 
+function focusTestRating(focus, fatigue) {
+  return 0.65 * focus + 0.35 * (1 - fatigue);
+}
+
+function defaultAggregate() {
+  return {
+    sampleCount: 0,
+    focusSum: 0,
+    fatigueSum: 0,
+    ratingSum: 0,
+    lowFocusCount: 0,
+    highFatigueCount: 0,
+    minFocus: null,
+    maxFocus: null,
+    firstSampleAt: null,
+    lastSampleAt: null
+  };
+}
+
+function sanitizeFocusTestRun(run) {
+  if (!run || typeof run !== "object") {
+    return null;
+  }
+
+  return {
+    id: String(run.id ?? `${Date.now()}`),
+    label: String(run.label ?? "Focus test").trim() || "Focus test",
+    variant: String(run.variant ?? "A").trim() || "A",
+    targetSite: normalizeHost(run.targetSite) ?? null,
+    startedAt: typeof run.startedAt === "number" ? run.startedAt : Date.now(),
+    endedAt: typeof run.endedAt === "number" ? run.endedAt : null,
+    sampleCount: Number.isFinite(run.sampleCount) ? run.sampleCount : 0,
+    focusSum: Number.isFinite(run.focusSum) ? run.focusSum : 0,
+    fatigueSum: Number.isFinite(run.fatigueSum) ? run.fatigueSum : 0,
+    ratingSum: Number.isFinite(run.ratingSum) ? run.ratingSum : 0,
+    lowFocusCount: Number.isFinite(run.lowFocusCount) ? run.lowFocusCount : 0,
+    highFatigueCount: Number.isFinite(run.highFatigueCount) ? run.highFatigueCount : 0,
+    firstSampleAt: typeof run.firstSampleAt === "number" ? run.firstSampleAt : null,
+    lastSampleAt: typeof run.lastSampleAt === "number" ? run.lastSampleAt : null,
+    sites: run.sites && typeof run.sites === "object" ? run.sites : {}
+  };
+}
+
+function createFocusTestRun(message) {
+  const label = String(message?.label ?? "").trim() || "Focus test";
+  const variant = String(message?.variant ?? "").trim() || "A";
+  const targetSite = normalizeHost(message?.site);
+  const now = Date.now();
+
+  return {
+    id: `${now}-${Math.random().toString(16).slice(2)}`,
+    label,
+    variant,
+    targetSite,
+    startedAt: now,
+    endedAt: null,
+    sampleCount: 0,
+    focusSum: 0,
+    fatigueSum: 0,
+    ratingSum: 0,
+    lowFocusCount: 0,
+    highFatigueCount: 0,
+    firstSampleAt: null,
+    lastSampleAt: null,
+    sites: {}
+  };
+}
+
+function usableActiveSite() {
+  if (!activeSite?.visible || !activeSite.host) {
+    return null;
+  }
+  if (Date.now() - activeSite.updatedAt > ACTIVE_SITE_FRESH_MS) {
+    return null;
+  }
+  return activeSite.host;
+}
+
+function hostMatchesTarget(host, targetSite) {
+  if (!targetSite) {
+    return true;
+  }
+  return host === targetSite || host.endsWith(`.${targetSite}`);
+}
+
+function addSampleToAggregate(aggregate, focus, fatigue, now) {
+  const next = { ...defaultAggregate(), ...(aggregate ?? {}) };
+  const rating = focusTestRating(focus, fatigue);
+
+  next.sampleCount += 1;
+  next.focusSum += focus;
+  next.fatigueSum += fatigue;
+  next.ratingSum += rating;
+  next.lowFocusCount += focus < 0.4 ? 1 : 0;
+  next.highFatigueCount += fatigue >= 0.75 ? 1 : 0;
+  next.minFocus = next.minFocus === null ? focus : Math.min(next.minFocus, focus);
+  next.maxFocus = next.maxFocus === null ? focus : Math.max(next.maxFocus, focus);
+  next.firstSampleAt ??= now;
+  next.lastSampleAt = now;
+  return next;
+}
+
+function updateFocusTestRun(run, sample, host, now) {
+  const focus = clamp01(sample?.focus);
+  const fatigue = clamp01(sample?.fatigue);
+  if (focus === null || fatigue === null) {
+    return null;
+  }
+
+  const site = normalizeHost(host);
+  if (!site || !hostMatchesTarget(site, run.targetSite)) {
+    return null;
+  }
+
+  const next = {
+    ...run,
+    sampleCount: run.sampleCount + 1,
+    focusSum: run.focusSum + focus,
+    fatigueSum: run.fatigueSum + fatigue,
+    ratingSum: run.ratingSum + focusTestRating(focus, fatigue),
+    lowFocusCount: run.lowFocusCount + (focus < 0.4 ? 1 : 0),
+    highFatigueCount: run.highFatigueCount + (fatigue >= 0.75 ? 1 : 0),
+    firstSampleAt: run.firstSampleAt ?? now,
+    lastSampleAt: now,
+    sites: { ...run.sites }
+  };
+
+  next.sites[site] = addSampleToAggregate(next.sites[site], focus, fatigue, now);
+  return next;
+}
+
+function persistFocusTestRun(run) {
+  chrome.storage.session.set({ [STORAGE_KEYS.focusTestActive]: run });
+  chrome.storage.local.get({ [STORAGE_KEYS.focusTestRuns]: [] }, (items) => {
+    const existing = Array.isArray(items[STORAGE_KEYS.focusTestRuns]) ? items[STORAGE_KEYS.focusTestRuns] : [];
+    const withoutCurrent = existing.filter((entry) => entry?.id !== run.id);
+    const next = withoutCurrent.concat(run).slice(-FOCUS_TEST_HISTORY_LIMIT);
+    chrome.storage.local.set({ [STORAGE_KEYS.focusTestRuns]: next });
+  });
+}
+
+function maybeLogFocusTest(sample, connectionState) {
+  if (!activeFocusTest) {
+    return;
+  }
+
+  const now = Date.now();
+  if (now - lastFocusTestLogAtMs < FOCUS_TEST_LOG_INTERVAL_MS) {
+    return;
+  }
+
+  const connected = connectionState === "connected" || connectionState === "calibrating";
+  const focus = clamp01(sample?.focus);
+  const fatigue = clamp01(sample?.fatigue);
+  if (!connected || sample?.calibrating || sample?.sources?.eeg === false || focus === null || fatigue === null) {
+    return;
+  }
+
+  const host = usableActiveSite();
+  if (!host) {
+    return;
+  }
+
+  const nextRun = updateFocusTestRun(activeFocusTest, sample, host, now);
+  if (!nextRun) {
+    return;
+  }
+
+  lastFocusTestLogAtMs = now;
+  activeFocusTest = nextRun;
+  persistFocusTestRun(nextRun);
+}
+
 function badgeColor(fatigue) {
   const value = clamp01(fatigue);
   if (value === null) {
@@ -334,6 +533,7 @@ function setStatus(state, detail = {}) {
   setBadge(detail.sample ?? null, state);
   maybeLogMetrics(detail.sample ?? null, state);
   maybeLogFlow(detail.sample ?? null, state);
+  maybeLogFocusTest(detail.sample ?? null, state);
 }
 
 function updateNotification(sample) {
@@ -496,27 +696,121 @@ function loadConfigAndConnect() {
   });
 }
 
+function sendFocusTestState(sendResponse) {
+  chrome.storage.local.get({ [STORAGE_KEYS.focusTestRuns]: [] }, (localItems) => {
+    sendResponse({
+      active: activeFocusTest,
+      activeSite,
+      runs: Array.isArray(localItems[STORAGE_KEYS.focusTestRuns]) ? localItems[STORAGE_KEYS.focusTestRuns] : []
+    });
+  });
+}
+
+function startFocusTest(message, sendResponse) {
+  const run = createFocusTestRun(message);
+  activeFocusTest = run;
+  lastFocusTestLogAtMs = 0;
+  persistFocusTestRun(run);
+  sendFocusTestState(sendResponse);
+}
+
+function stopFocusTest(sendResponse) {
+  if (activeFocusTest) {
+    activeFocusTest = { ...activeFocusTest, endedAt: Date.now() };
+    chrome.storage.session.set({ [STORAGE_KEYS.focusTestActive]: null });
+    chrome.storage.local.get({ [STORAGE_KEYS.focusTestRuns]: [] }, (items) => {
+      const existing = Array.isArray(items[STORAGE_KEYS.focusTestRuns]) ? items[STORAGE_KEYS.focusTestRuns] : [];
+      const withoutCurrent = existing.filter((entry) => entry?.id !== activeFocusTest.id);
+      const next = withoutCurrent.concat(activeFocusTest).slice(-FOCUS_TEST_HISTORY_LIMIT);
+      const stoppedRun = activeFocusTest;
+      activeFocusTest = null;
+      chrome.storage.local.set({ [STORAGE_KEYS.focusTestRuns]: next }, () => {
+        sendResponse({ active: null, stopped: stoppedRun, runs: next, activeSite });
+      });
+    });
+    return;
+  }
+
+  chrome.storage.session.set({ [STORAGE_KEYS.focusTestActive]: null }, () => {
+    sendFocusTestState(sendResponse);
+  });
+}
+
+function clearFocusTestHistory(sendResponse) {
+  activeFocusTest = null;
+  chrome.storage.session.set({ [STORAGE_KEYS.focusTestActive]: null });
+  chrome.storage.local.set({ [STORAGE_KEYS.focusTestRuns]: [] }, () => {
+    sendResponse({ active: null, runs: [], activeSite });
+  });
+}
+
+function handleSitePresence(message, sender) {
+  const host = normalizeHost(message?.host);
+  if (!host) {
+    return;
+  }
+
+  const tabId = typeof sender?.tab?.id === "number" ? sender.tab.id : null;
+  const visible = Boolean(message.visible);
+  if (!visible && activeSite?.tabId !== tabId) {
+    return;
+  }
+
+  activeSite = {
+    host,
+    href: typeof message.href === "string" ? message.href.slice(0, 500) : "",
+    visible,
+    tabId,
+    updatedAt: Date.now()
+  };
+}
+
 chrome.runtime.onInstalled.addListener(loadConfigAndConnect);
 chrome.runtime.onStartup.addListener(loadConfigAndConnect);
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== "getGateState") {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "getGateState") {
+    chrome.storage.session.get([STORAGE_KEYS.sample, STORAGE_KEYS.status], (sessionItems) => {
+      chrome.storage.local.get({
+        [STORAGE_KEYS.gateEnabled]: true,
+        [STORAGE_KEYS.gateBlocklist]: DEFAULT_GATE_BLOCKLIST.join("\n")
+      }, (localItems) => {
+        sendResponse({
+          sample: sessionItems[STORAGE_KEYS.sample] ?? unavailableSample(),
+          status: sessionItems[STORAGE_KEYS.status] ?? { state: "disconnected", connected: false },
+          gateEnabled: Boolean(localItems[STORAGE_KEYS.gateEnabled]),
+          gateBlocklist: localItems[STORAGE_KEYS.gateBlocklist] ?? DEFAULT_GATE_BLOCKLIST.join("\n")
+        });
+      });
+    });
+    return true;
+  }
+
+  if (message?.type === "sitePresence") {
+    handleSitePresence(message, sender);
     return false;
   }
 
-  chrome.storage.session.get([STORAGE_KEYS.sample, STORAGE_KEYS.status], (sessionItems) => {
-    chrome.storage.local.get({
-      [STORAGE_KEYS.gateEnabled]: true,
-      [STORAGE_KEYS.gateBlocklist]: DEFAULT_GATE_BLOCKLIST.join("\n")
-    }, (localItems) => {
-      sendResponse({
-        sample: sessionItems[STORAGE_KEYS.sample] ?? unavailableSample(),
-        status: sessionItems[STORAGE_KEYS.status] ?? { state: "disconnected", connected: false },
-        gateEnabled: Boolean(localItems[STORAGE_KEYS.gateEnabled]),
-        gateBlocklist: localItems[STORAGE_KEYS.gateBlocklist] ?? DEFAULT_GATE_BLOCKLIST.join("\n")
-      });
-    });
-  });
-  return true;
+  if (message?.type === "getFocusTestState") {
+    sendFocusTestState(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "startFocusTest") {
+    startFocusTest(message, sendResponse);
+    return true;
+  }
+
+  if (message?.type === "stopFocusTest") {
+    stopFocusTest(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "clearFocusTestHistory") {
+    clearFocusTestHistory(sendResponse);
+    return true;
+  }
+
+  return false;
 });
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local" || !changes[STORAGE_KEYS.wsUrl]) {
@@ -535,6 +829,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === RECONNECT_ALARM) {
     connect();
   }
+});
+
+chrome.storage.session.get({ [STORAGE_KEYS.focusTestActive]: null }, (items) => {
+  activeFocusTest = sanitizeFocusTestRun(items[STORAGE_KEYS.focusTestActive]);
 });
 
 loadConfigAndConnect();

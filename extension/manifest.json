@@ -23,6 +23,7 @@
         "<all_urls>"
       ],
       "js": [
+        "site_tracker.js",
         "cat.js",
         "gate.js"
       ],

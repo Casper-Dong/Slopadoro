@@ -284,6 +284,9 @@ function loadInitialState() {
   });
 
   chrome.storage.session.get([GATE_KEYS.sample, GATE_KEYS.status], (items) => {
+    if (chrome.runtime.lastError || !items) {
+      return;
+    }
     latestSample = items[GATE_KEYS.sample] ?? latestSample;
     connectionStatus = items[GATE_KEYS.status] ?? connectionStatus;
     evaluateGate();

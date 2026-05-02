@@ -181,6 +181,148 @@ h1 {
   font-size: 11px;
 }
 
+.test-panel {
+  display: grid;
+  gap: 9px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.test-heading,
+.test-actions,
+.ab-row {
+  display: grid;
+  gap: 8px;
+}
+
+.test-heading {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+}
+
+.test-heading span,
+.test-form label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.test-heading strong {
+  max-width: 128px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.test-form {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 7px 8px;
+  align-items: center;
+}
+
+.test-form input,
+.test-form select {
+  min-width: 0;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 9px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+
+.test-actions {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.test-actions button {
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  padding: 0 8px;
+  background: var(--text);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.test-actions button + button {
+  background: #e5e7eb;
+  color: var(--text);
+}
+
+.test-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.test-form p,
+.ab-empty {
+  grid-column: 1 / -1;
+  min-height: 16px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.ab-results {
+  display: grid;
+  gap: 6px;
+}
+
+.ab-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--panel);
+}
+
+.ab-meta {
+  display: grid;
+  min-width: 0;
+}
+
+.ab-meta strong,
+.ab-meta span,
+.ab-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ab-meta strong {
+  font-size: 12px;
+}
+
+.ab-meta span,
+.ab-detail {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.ab-score {
+  min-width: 34px;
+  text-align: right;
+  color: var(--ok);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.ab-detail {
+  grid-column: 1 / -1;
+}
+
 .metric {
   display: grid;
   gap: 7px;
