@@ -53,7 +53,7 @@ def subscores(focus, fatigue):
     }
 
 
-async def stream(websocket, scenario, calibration_seconds):
+async def stream(websocket, scenario, calibration_seconds, headset_delay_seconds):
     scenarios = {
         "random_walk": random_walk,
         "scripted": scripted,
@@ -64,14 +64,15 @@ async def stream(websocket, scenario, calibration_seconds):
     while True:
         elapsed = time.monotonic() - start
         focus, fatigue = scenarios[scenario](elapsed, state)
-        calibrating = elapsed < calibration_seconds
+        headset_ready = elapsed >= headset_delay_seconds
+        calibrating = headset_ready and elapsed < headset_delay_seconds + calibration_seconds
         message = {
             "ts": time.time(),
-            "focus": None if calibrating else round(focus, 3),
-            "fatigue": None if calibrating else round(fatigue, 3),
+            "focus": None if calibrating or not headset_ready else round(focus, 3),
+            "fatigue": None if calibrating or not headset_ready else round(fatigue, 3),
             "calibrating": calibrating,
             "subscores": subscores(focus, fatigue),
-            "sources": {"eeg": True, "ecg": True, "emg": True},
+            "sources": {"eeg": headset_ready, "ecg": headset_ready, "emg": headset_ready},
         }
         await websocket.send(json.dumps(message))
         await asyncio.sleep(0.25)
@@ -83,12 +84,13 @@ async def main():
     parser.add_argument("--port", default=8765, type=int)
     parser.add_argument("--scenario", choices=("random_walk", "scripted", "sleepy"), default="random_walk")
     parser.add_argument("--calibration-seconds", default=0.0, type=float)
+    parser.add_argument("--headset-delay-seconds", default=0.0, type=float)
     args = parser.parse_args()
 
     async def handler(websocket, *_):
         print("client connected")
         try:
-            await stream(websocket, args.scenario, args.calibration_seconds)
+            await stream(websocket, args.scenario, args.calibration_seconds, args.headset_delay_seconds)
         except websockets.ConnectionClosed:
             print("client disconnected")
 

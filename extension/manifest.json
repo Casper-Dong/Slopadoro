@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Fatigue Cat",
-  "description": "Animated cat overlay driven by a local focus and fatigue WebSocket stream.",
+  "description": "Animated cat overlay driven by a focus and fatigue WebSocket stream.",
   "version": "0.1.0",
   "permissions": [
     "alarms",

@@ -146,6 +146,72 @@ h1 {
   background: var(--fatigue);
 }
 
+.flow-panel {
+  display: grid;
+  gap: 9px;
+}
+
+.flow-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.flow-row span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.flow-row strong {
+  min-width: 88px;
+  text-align: right;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.heatmap {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 3px;
+  min-height: 39px;
+}
+
+.heat-cell {
+  aspect-ratio: 1;
+  min-width: 0;
+  border-radius: 2px;
+  background: var(--off);
+}
+
+.heat-cell.empty {
+  background: #e2e8f0;
+  opacity: 0.38;
+}
+
+.heat-cell.offline,
+.heat-cell.waiting {
+  background: #94a3b8;
+  opacity: 0.75;
+}
+
+.heat-cell.flow {
+  background: #0891b2;
+}
+
+.heat-cell.steady {
+  background: #16a34a;
+}
+
+.heat-cell.drifting {
+  background: #f59e0b;
+}
+
+.heat-cell.break {
+  background: #dc2626;
+}
+
 .sources {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

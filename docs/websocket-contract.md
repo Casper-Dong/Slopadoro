@@ -1,6 +1,6 @@
 # WebSocket Contract
 
-The browser extension connects to `ws://localhost:8765`. The server pushes JSON messages at about 4 Hz. The extension sends no messages.
+The browser extension defaults to `ws://localhost:8765/`, and the popup can save another `ws://` or `wss://` endpoint. The server pushes JSON messages at about 4 Hz. The extension sends no messages.
 
 ```json
 {
@@ -34,3 +34,5 @@ Fields:
 - `sources`: Current source availability for `eeg`, `ecg`, and `emg`.
 
 If one sensor drops, its `sources.*` value becomes `false`. Fused `focus` and `fatigue` should still be emitted using available modalities with weights renormalized by the producer.
+
+For the firmware acquisition path, `tools/lsl_scores_ws.py` translates the `slopodoro_scores` LSL stream into this contract. When `openbci_missing` is true, it emits `sources.eeg=false`, `sources.emg=false`, and null focus/fatigue so the extension parks the cat asleep until the headset stream is available.

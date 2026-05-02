@@ -2,6 +2,7 @@ const DEFAULT_WS_URL = "ws://localhost:8765/";
 const STORAGE_KEYS = {
   sample: "latestSample",
   status: "connectionStatus",
+  flowLog: "flowLog",
   wsUrl: "wsUrl"
 };
 
@@ -12,6 +13,8 @@ const STALE_AFTER_MS = 2000;
 const FATIGUE_ALERT_THRESHOLD = 0.75;
 const FATIGUE_ALERT_MS = 30000;
 const NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000;
+const FLOW_LOG_INTERVAL_MS = 5000;
+const FLOW_LOG_MAX_ENTRIES = 360;
 
 let socket = null;
 let reconnectDelayMs = RECONNECT_MIN_MS;
@@ -21,6 +24,8 @@ let highFatigueSinceMs = null;
 let notificationCooldownUntilMs = 0;
 let wsUrl = DEFAULT_WS_URL;
 let configLoading = false;
+let lastFlowLogAtMs = 0;
+let lastFlowLogState = null;
 
 function clamp01(value) {
   if (typeof value !== "number" || Number.isNaN(value)) {
@@ -29,9 +34,60 @@ function clamp01(value) {
   return Math.min(1, Math.max(0, value));
 }
 
+function score01(value) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return null;
+  }
+  return clamp01(value / 100);
+}
+
+function sourceAvailability(rawSources, fallback = { eeg: false, ecg: false, emg: false }) {
+  return {
+    eeg: Boolean(rawSources?.eeg ?? fallback.eeg),
+    ecg: Boolean(rawSources?.ecg ?? fallback.ecg),
+    emg: Boolean(rawSources?.emg ?? fallback.emg)
+  };
+}
+
+function normalizeScoreFrame(raw) {
+  const scores = raw?.scores;
+  if (!scores || typeof scores !== "object") {
+    return null;
+  }
+
+  const flags = raw.flags && typeof raw.flags === "object" ? raw.flags : {};
+  const state = typeof raw.state === "string" ? raw.state : "";
+  const openbciMissing = Boolean(flags.openbci_missing || state === "openbci_missing");
+  const polarMissing = Boolean(flags.polar_missing || state === "polar_missing");
+  const calibrating = Boolean(raw.calibrating || state === "calibrating");
+  const sources = sourceAvailability(raw.sources, {
+    eeg: !openbciMissing,
+    ecg: !polarMissing,
+    emg: !openbciMissing
+  });
+
+  return {
+    ts: typeof raw.timestamp === "number" ? raw.timestamp : Date.now() / 1000,
+    focus: calibrating || openbciMissing ? null : score01(scores.focus_score_0_100),
+    fatigue: calibrating || openbciMissing ? null : score01(scores.fatigue_drift_score_0_100),
+    calibrating,
+    subscores: {
+      emg_strain_score_0_100: scores.emg_strain_score_0_100 ?? null,
+      signal_quality_score_0_100: scores.signal_quality_score_0_100 ?? null,
+      recovery_context_score_0_100: scores.recovery_context_score_0_100 ?? null
+    },
+    sources
+  };
+}
+
 function normalizeSample(raw) {
   if (!raw || typeof raw !== "object") {
     return null;
+  }
+
+  const scoreFrame = normalizeScoreFrame(raw);
+  if (scoreFrame) {
+    return scoreFrame;
   }
 
   return {
@@ -40,11 +96,7 @@ function normalizeSample(raw) {
     fatigue: raw.fatigue === null ? null : clamp01(raw.fatigue),
     calibrating: Boolean(raw.calibrating),
     subscores: raw.subscores && typeof raw.subscores === "object" ? raw.subscores : {},
-    sources: {
-      eeg: Boolean(raw.sources?.eeg),
-      ecg: Boolean(raw.sources?.ecg),
-      emg: Boolean(raw.sources?.emg)
-    }
+    sources: sourceAvailability(raw.sources)
   };
 }
 
@@ -86,6 +138,61 @@ function writeSession(update) {
   chrome.storage.session.set(update);
 }
 
+function classifyFlow(sample, connectionState) {
+  const focus = clamp01(sample?.focus);
+  const fatigue = clamp01(sample?.fatigue);
+  const connected = connectionState === "connected" || connectionState === "calibrating";
+
+  if (!connected) {
+    return { state: "offline", score: null };
+  }
+  if (sample?.sources?.eeg === false) {
+    return { state: "waiting", score: null };
+  }
+  if (sample?.calibrating || focus === null || fatigue === null) {
+    return { state: "calibrating", score: null };
+  }
+  if (fatigue >= 0.75 || focus < 0.35) {
+    return { state: "break", score: focus * (1 - fatigue) };
+  }
+  if (focus >= 0.72 && fatigue < 0.45) {
+    return { state: "flow", score: focus * (1 - fatigue) };
+  }
+  if (focus >= 0.55 && fatigue < 0.6) {
+    return { state: "steady", score: focus * (1 - fatigue) };
+  }
+  return { state: "drifting", score: focus * (1 - fatigue) };
+}
+
+function maybeLogFlow(sample, connectionState) {
+  const now = Date.now();
+  const flow = classifyFlow(sample, connectionState);
+  const stateChanged = flow.state !== lastFlowLogState;
+
+  if (!stateChanged && now - lastFlowLogAtMs < FLOW_LOG_INTERVAL_MS) {
+    return;
+  }
+
+  lastFlowLogAtMs = now;
+  lastFlowLogState = flow.state;
+
+  const entry = {
+    ts: sample?.ts ?? now / 1000,
+    loggedAt: now,
+    state: flow.state,
+    score: flow.score === null ? null : Number(flow.score.toFixed(3)),
+    focus: clamp01(sample?.focus),
+    fatigue: clamp01(sample?.fatigue),
+    sources: sourceAvailability(sample?.sources)
+  };
+
+  chrome.storage.session.get({ [STORAGE_KEYS.flowLog]: [] }, (items) => {
+    const existing = Array.isArray(items[STORAGE_KEYS.flowLog]) ? items[STORAGE_KEYS.flowLog] : [];
+    const next = existing.concat(entry).slice(-FLOW_LOG_MAX_ENTRIES);
+    chrome.storage.session.set({ [STORAGE_KEYS.flowLog]: next });
+  });
+}
+
 function badgeColor(fatigue) {
   const value = clamp01(fatigue);
   if (value === null) {
@@ -101,19 +208,25 @@ function badgeColor(fatigue) {
 }
 
 function setBadge(sample, state) {
-  const connected = state === "connected";
+  const connected = state === "connected" || state === "calibrating";
   const calibrating = state === "calibrating" || sample?.calibrating;
+  const headsetReady = sample?.sources?.eeg !== false;
   const focus = clamp01(sample?.focus);
   const fatigue = clamp01(sample?.fatigue);
-  const text = connected && !calibrating && focus !== null ? String(Math.min(99, Math.round(focus * 100))) : "...";
+  const live = connected && !calibrating && headsetReady && focus !== null;
+  const text = live ? String(Math.min(99, Math.round(focus * 100))) : "...";
+  let title = `Cat fatigue: waiting for ${shortWsUrl()}`;
+  if (live) {
+    title = `Cat fatigue: focus ${text}, fatigue ${Math.round((fatigue ?? 0) * 100)}`;
+  } else if (connected && !headsetReady) {
+    title = "Cat fatigue: waiting for headset";
+  } else if (connected && calibrating) {
+    title = "Cat fatigue: calibrating";
+  }
 
   chrome.action.setBadgeText({ text });
-  chrome.action.setBadgeBackgroundColor({ color: connected && !calibrating ? badgeColor(fatigue) : "#6b7280" });
-  chrome.action.setTitle({
-    title: connected && !calibrating
-      ? `Cat fatigue: focus ${text}, fatigue ${Math.round((fatigue ?? 0) * 100)}`
-      : `Cat fatigue: waiting for ${shortWsUrl()}`
-  });
+  chrome.action.setBadgeBackgroundColor({ color: live ? badgeColor(fatigue) : "#6b7280" });
+  chrome.action.setTitle({ title });
 }
 
 function broadcastFatigue(sample) {
@@ -151,6 +264,7 @@ function setStatus(state, detail = {}) {
   };
   writeSession({ [STORAGE_KEYS.status]: status });
   setBadge(detail.sample ?? null, state);
+  maybeLogFlow(detail.sample ?? null, state);
 }
 
 function updateNotification(sample) {

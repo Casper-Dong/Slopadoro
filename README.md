@@ -52,6 +52,12 @@ python3 tools/mock_ws.py --scenario scripted
 python3 tools/mock_ws.py --scenario random_walk
 ```
 
+To simulate the headset being off before data starts:
+
+```bash
+python3 tools/mock_ws.py --scenario sleepy --headset-delay-seconds 15
+```
+
 ## Load the Extension
 
 1. Open `chrome://extensions`.
@@ -69,15 +75,27 @@ To let another browser or device connect to the mock server over your local netw
 python3 tools/mock_ws.py --host 0.0.0.0 --scenario sleepy
 ```
 
+## Hardware Bridge
+
+Chrome cannot subscribe to LSL directly, so hardware data reaches the extension through a local WebSocket adapter. Start the acquisition side so it publishes the `slopodoro_scores` LSL stream, then run:
+
+```bash
+python3 tools/lsl_scores_ws.py
+```
+
+That bridge reads the firmware `Scores` frames, maps `focus_score_0_100` and `fatigue_drift_score_0_100` into the extension's `0..1` WebSocket contract, and reports OpenBCI/Polar availability through `sources`.
+
 ## Behavior
 
 - Badge shows `...` while disconnected or calibrating.
 - Badge shows `0` to `99` from focus when live.
 - Badge color becomes redder as fatigue rises.
-- The cat hides while calibrating, when fatigue is `null`, or when the WebSocket disconnects.
+- Before the headset/OpenBCI stream is available, the cat sleeps in the bottom-right corner.
+- During calibration or a disconnected WebSocket, the cat also stays asleep instead of disappearing.
 - High focus plus low fatigue makes the cat sleep in the corner.
 - Medium focus/fatigue makes the cat wander.
 - High fatigue or very low focus makes the cat jump and run around.
+- The popup keeps a bounded session-only flow log and renders the recent states as a heat map.
 - A notification fires after fatigue stays above `0.75` for 30 seconds, then enters a 5-minute cooldown.
 
 ## Contract

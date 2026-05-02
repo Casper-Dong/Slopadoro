@@ -1,7 +1,7 @@
 const SPRITE_URL = chrome.runtime.getURL("cat-sprite-sheet.png");
 const FRAME_W = 32;
 const FRAME_H = 32;
-const SCALE = 2;
+const SCALE = 3;
 const DISPLAY_W = FRAME_W * SCALE;
 const DISPLAY_H = FRAME_H * SCALE;
 const SHEET_W = 256 * SCALE;
@@ -29,6 +29,7 @@ let visible = false;
 let focus = 0.5;
 let fatigue = null;
 let calibrating = true;
+let sources = { eeg: false, ecg: false, emg: false };
 let lastFrameAt = 0;
 let lastMoveAt = 0;
 let jumpOffset = 0;
@@ -137,12 +138,17 @@ function updatePosition() {
 function tick(now) {
   ensureHost();
 
-  const shouldHide = calibrating || fatigue === null;
-  const nextAnimation = shouldHide ? null : animationFor(focus, fatigue);
+  const waitingForStream = calibrating || fatigue === null;
+  const headsetMissing = sources.eeg === false;
+  const nextAnimation = waitingForStream || headsetMissing ? "sleep" : animationFor(focus, fatigue);
   setAnimation(nextAnimation, now);
 
   if (visible && activeName) {
     const animation = ANIMATIONS[activeName];
+    if (animation.corner) {
+      x = Math.max(0, window.innerWidth - DISPLAY_W - 12);
+      direction = -1;
+    }
     const frameDuration = 1000 / animation.fps;
     if (now - lastFrameAt >= frameDuration) {
       const steps = Math.floor((now - lastFrameAt) / frameDuration);
@@ -177,6 +183,13 @@ function applyFatigueMessage(message) {
   focus = clamp01(message.focus) ?? focus;
   fatigue = clamp01(message.value);
   calibrating = Boolean(message.calibrating);
+  if (message.sources && typeof message.sources === "object") {
+    sources = {
+      eeg: Boolean(message.sources.eeg),
+      ecg: Boolean(message.sources.ecg),
+      emg: Boolean(message.sources.emg)
+    };
+  }
 }
 
 chrome.runtime.onMessage.addListener((message) => {
