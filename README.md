@@ -1,4 +1,4 @@
-# Fatigue Cat Chrome Extension
+# Monitor Your Flow State
 
 Chrome MV3 extension that shows a pixel cat along the bottom of normal web pages. The cat responds live to `focus` and `fatigue` samples from a WebSocket stream. It defaults to `ws://localhost:8765/`, and the popup can point it at another `ws://` or `wss://` endpoint.
 
@@ -179,6 +179,7 @@ That bridge reads the firmware `Scores` frames, maps `focus_score_0_100` and `fa
 - Medium focus/fatigue makes the cat wander.
 - High fatigue or very low focus makes the cat jump and run around.
 - The popup keeps bounded session-only metric and flow logs, rendering focus/fatigue as line charts and recent states as a heat map.
+- The adaptive distraction gate desaturates blocklisted sites and shows a 5-second confirmation modal only when fatigue is high or focus is low.
 - A notification fires after fatigue stays above `0.75` for 30 seconds, then enters a 5-minute cooldown.
 
 ## Contract

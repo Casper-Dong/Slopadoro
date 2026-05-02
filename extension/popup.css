@@ -36,6 +36,13 @@ h1 {
   letter-spacing: 0;
 }
 
+.tagline {
+  margin: 5px 0 0;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 #statusText {
   min-height: 18px;
   margin: 2px 0 0;
@@ -97,6 +104,223 @@ h1 {
   margin: 0;
   color: var(--muted);
   font-size: 11px;
+}
+
+.gate-config {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.gate-config label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.toggle-row input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--ok);
+}
+
+.gate-config textarea {
+  width: 100%;
+  min-height: 74px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 9px;
+  background: var(--panel);
+  color: var(--text);
+  font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.gate-actions {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.gate-actions button {
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 12px;
+  background: var(--text);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 700;
+}
+
+.gate-actions button + button {
+  background: #e5e7eb;
+  color: var(--text);
+}
+
+.gate-actions p {
+  min-height: 16px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.gate-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.test-panel {
+  display: grid;
+  gap: 9px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.test-heading,
+.test-actions,
+.ab-row {
+  display: grid;
+  gap: 8px;
+}
+
+.test-heading {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+}
+
+.test-heading span,
+.test-form label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.test-heading strong {
+  max-width: 128px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.test-form {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 7px 8px;
+  align-items: center;
+}
+
+.test-form input,
+.test-form select {
+  min-width: 0;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 9px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+
+.test-actions {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.test-actions button {
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  padding: 0 8px;
+  background: var(--text);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.test-actions button + button {
+  background: #e5e7eb;
+  color: var(--text);
+}
+
+.test-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.test-form p,
+.ab-empty {
+  grid-column: 1 / -1;
+  min-height: 16px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.ab-results {
+  display: grid;
+  gap: 6px;
+}
+
+.ab-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--panel);
+}
+
+.ab-meta {
+  display: grid;
+  min-width: 0;
+}
+
+.ab-meta strong,
+.ab-meta span,
+.ab-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ab-meta strong {
+  font-size: 12px;
+}
+
+.ab-meta span,
+.ab-detail {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.ab-score {
+  min-width: 34px;
+  text-align: right;
+  color: var(--ok);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.ab-detail {
+  grid-column: 1 / -1;
 }
 
 .metric {
@@ -228,20 +452,8 @@ h1 {
   opacity: 0.75;
 }
 
-.heat-cell.flow {
-  background: #0891b2;
-}
-
-.heat-cell.steady {
-  background: #16a34a;
-}
-
-.heat-cell.drifting {
-  background: #f59e0b;
-}
-
-.heat-cell.break {
-  background: #dc2626;
+.heat-cell.productivity {
+  background: hsl(142 58% 22% / 0.42);
 }
 
 .sources {

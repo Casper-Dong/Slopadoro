@@ -3,13 +3,14 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Fatigue Cat</title>
+    <title>Monitor Your Flow State</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
     <main class="shell">
       <header>
-        <h1>Fatigue Cat</h1>
+        <h1>Monitor Your Flow State</h1>
+        <p class="tagline">"Tabbi" the cat wanders between your tabs when you drift out of focus. See how locked in you are with our heatmap tracker!</p>
         <p id="statusText">Connecting</p>
       </header>
 
@@ -23,6 +24,48 @@
         </div>
         <p id="endpointMessage" aria-live="polite"></p>
       </form>
+
+      <form id="gateForm" class="gate-config">
+        <label class="toggle-row">
+          <input id="gateEnabledInput" type="checkbox">
+          <span>Adaptive distraction gate</span>
+        </label>
+        <label for="gateBlocklistInput">Blocklist</label>
+        <textarea id="gateBlocklistInput" rows="4" spellcheck="false"></textarea>
+        <div class="gate-actions">
+          <button type="submit">Save Gate</button>
+          <button id="gateCurrentSiteButton" type="button">Gate Current Site</button>
+          <p id="gateMessage" aria-live="polite"></p>
+        </div>
+        <p id="gateStatus" class="gate-status">Gate status: --</p>
+        <p id="gateSiteStatus" class="gate-status">Current site: --</p>
+      </form>
+
+      <section class="test-panel">
+        <div class="test-heading">
+          <span>Focus test</span>
+          <strong id="focusTestStatus">Off</strong>
+        </div>
+        <form id="focusTestForm" class="test-form">
+          <label for="focusTestNameInput">Test</label>
+          <input id="focusTestNameInput" type="text" autocomplete="off" maxlength="60" placeholder="Writing block">
+          <label for="focusTestVariantInput">Variant</label>
+          <input id="focusTestVariantInput" type="text" autocomplete="off" maxlength="24" placeholder="A">
+          <label for="focusTestScopeInput">Track</label>
+          <select id="focusTestScopeInput">
+            <option value="current">Current site</option>
+            <option value="all">All sites</option>
+          </select>
+          <div class="test-actions">
+            <button id="startFocusTestButton" type="submit">Start</button>
+            <button id="stopFocusTestButton" type="button">Stop</button>
+            <button id="clearFocusTestsButton" type="button">Clear</button>
+            <button id="exportFocusTestsButton" type="button">Export CSV</button>
+          </div>
+          <p id="focusTestMessage" aria-live="polite"></p>
+        </form>
+        <div id="abResults" class="ab-results" aria-label="A/B focus test results"></div>
+      </section>
 
       <section class="metric">
         <div class="metric-row">
